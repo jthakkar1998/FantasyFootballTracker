@@ -20,12 +20,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <nav>
               <Link href="/">Dashboard</Link>
               <Link href="/history">History</Link>
+              <Link href="/recaps">Recaps</Link>
               <Link href="/admin">Commissioner</Link>
             </nav>
           </div>
         </header>
         <main className="shell">{children}</main>
-        <footer className="shell footer">Powered by ESPN league data · Completion status is commissioner-managed.</footer>
+        <footer className="shell footer">Powered by ESPN league data · Recap videos are stored in Supabase.</footer>
       </body>
     </html>
   );

@@ -131,3 +131,49 @@ input:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255,
 .rules-strip strong { font-size: 13px; }
 .rules-strip em { color: var(--accent); font-style: normal; font-weight: 900; white-space: nowrap; }
 @media (max-width: 720px) { .rules-strip { grid-template-columns: 1fr; } .rules-strip > span { border-right: 0; border-bottom: 1px solid var(--line); } .rules-strip > span:last-child { border-bottom: 0; } }
+
+/* Recap video uploads and archive */
+.upload-card { width: min(620px, 100%); padding: 30px; }
+.upload-card h1 { margin: 8px 0 12px; font-size: 42px; letter-spacing: -.04em; }
+.upload-card > p, .upload-success p { color: var(--muted); line-height: 1.6; }
+.upload-team { margin: 22px 0 4px; }
+.upload-form { margin-top: 22px; }
+.upload-form input[type="file"] { padding: 14px; }
+.helper-text, .selected-file { color: var(--muted); font-size: 12px; margin: -10px 0 14px; }
+.selected-file { color: var(--text); }
+.inline-button { display: inline-block; margin-top: 10px; }
+.upload-success { text-align: center; padding: 18px 0 4px; }
+.upload-link-notice p { margin: 5px 0 10px; }
+.upload-link-notice input { margin-top: 4px; background: rgba(0,0,0,.18); }
+.action-stack { display: flex; flex-wrap: wrap; gap: 8px; }
+.video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+.video-card { overflow: hidden; padding: 18px; }
+.video-card-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+.video-card-head .team-identity { margin-top: 5px; }
+.video-card-head > strong { color: var(--accent); white-space: nowrap; }
+.video-card video, .recap-video-wrap video { width: 100%; aspect-ratio: 16 / 9; display: block; background: #05070a; border-radius: 12px; }
+.recap-video-wrap { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 18px; }
+.archive-link { display: inline-block; margin-top: 10px; color: var(--accent); font-size: 13px; font-weight: 800; }
+@media (max-width: 720px) { .action-stack { flex-direction: column; } }
+
+/* In-browser recap recorder */
+.recorder-panel { margin-top: 22px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.025); }
+.recorder-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.recorder-heading h2 { margin: 5px 0 0; font-size: 24px; letter-spacing: -.03em; }
+.recording-limit { border: 1px solid rgba(215,255,63,.35); border-radius: 999px; padding: 6px 10px; color: var(--accent); font-weight: 800; font-size: 12px; white-space: nowrap; }
+.recorder-stage { margin-top: 16px; }
+.live-recap-video, .recorded-recap-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #05070a; border-radius: 14px; }
+.live-recap-video { transform: scaleX(-1); }
+.recorder-controls { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
+.recording-indicator { display: inline-flex; align-items: center; gap: 8px; font-weight: 850; letter-spacing: .04em; }
+.recording-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 0 4px rgba(255,77,94,.12); }
+.preview-controls > span { color: var(--muted); font-weight: 700; }
+.recording-note { margin-top: 12px; color: #ffd08b; }
+.upload-divider { display: flex; align-items: center; gap: 12px; margin: 24px 0 18px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.upload-divider::before, .upload-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.submit-recap-button { margin-top: 16px; width: 100%; }
+@media (max-width: 640px) {
+  .recorder-heading { align-items: center; }
+  .recorder-panel { padding: 16px; }
+  .recorder-controls .button { width: 100%; }
+}

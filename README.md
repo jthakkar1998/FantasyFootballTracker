@@ -116,3 +116,20 @@ ESPN_SEASON=2027
 ```
 
 The database keeps 2026 history because `season` is part of every obligation and every unique source key.
+
+## Recap video uploads
+
+The video-enabled version adds a `/recaps` archive and private per-obligation submission links.
+
+For an existing database:
+
+1. Run `supabase/recap-videos-migration.sql` once in Supabase SQL Editor.
+2. In Supabase Storage, create a public bucket named exactly `recap-videos`.
+3. Set the bucket file-size limit to **50 MB** and restrict it to video MIME types (`video/mp4`, `video/quicktime`, `video/webm`).
+4. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to `.env.local` and Vercel. The publishable key is safe for browser use; never expose `SUPABASE_SECRET_KEY`.
+5. From `/admin`, click **Create upload link** for a weekly recap and send that private link to the recap loser.
+6. The submission page recommends **Record recap**. It requests the front camera at up to 720p/30 fps, targets about 2 Mbps video + 96 kbps audio, and automatically stops at 2:00 or early if the file approaches the free storage limit.
+7. The loser can preview and re-record before submitting. Existing MP4/MOV/WebM files up to 48 MB remain available as a fallback.
+8. A successful website upload automatically marks the recap complete and adds it to `/recaps`.
+
+The upload itself goes directly from the browser to Supabase using a short-lived signed upload token. The large video file never passes through a Vercel function. Camera recording works on secure contexts such as `https://...` production URLs and on `localhost`; the browser will ask the user for camera and microphone permission.

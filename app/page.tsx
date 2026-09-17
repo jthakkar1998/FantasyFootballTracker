@@ -3,7 +3,7 @@ import { StatusPill } from "@/components/StatusPill";
 import { TeamIdentity } from "@/components/TeamIdentity";
 import { formatDateOnly, formatDateTime, isOverdue } from "@/lib/format";
 import { leagueConfig } from "@/lib/config";
-import { databaseConfigured, listObligations } from "@/lib/supabase";
+import { databaseConfigured, getPublicRecapVideoUrl, listObligations } from "@/lib/supabase";
 import type { Obligation } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -57,10 +57,11 @@ export default async function Dashboard() {
   }
 
   const open = obligations.filter((item) => !item.completed);
-  const recaps = open.filter((item) => item.type === "WEEKLY_RECAP");
+  const allRecaps = obligations.filter((item) => item.type === "WEEKLY_RECAP");
   const penalties = open.filter((item) => item.type !== "WEEKLY_RECAP");
   const latestWeek = obligations.reduce((max, item) => Math.max(max, item.week), 0);
-  const latestRecaps = recaps.filter((item) => item.week === Math.max(0, ...recaps.map((r) => r.week)));
+  const latestRecapWeek = Math.max(0, ...allRecaps.map((r) => r.week));
+  const latestRecaps = allRecaps.filter((item) => item.week === latestRecapWeek);
 
   const teamTotals = new Map<string, { name: string; logo: string | null; recaps: number; units: number }>();
   for (const item of obligations) {
@@ -98,11 +99,20 @@ export default async function Dashboard() {
                   <span>points</span>
                 </div>
                 <p>{recap.description}</p>
-                <div className="deadline-box">
-                  <span>VIDEO DEADLINE</span>
-                  <strong>{formatDateTime(recap.due_at)}</strong>
-                  {recap.due_at ? <em><Countdown dueAt={recap.due_at} /></em> : null}
-                </div>
+                {recap.video_path ? (
+                  <div className="recap-video-wrap">
+                    <video controls preload="metadata" playsInline src={getPublicRecapVideoUrl(recap.video_path) ?? undefined}>
+                      Your browser does not support embedded video.
+                    </video>
+                    <a className="archive-link" href="/recaps">See all recap videos →</a>
+                  </div>
+                ) : (
+                  <div className="deadline-box">
+                    <span>VIDEO DEADLINE</span>
+                    <strong>{formatDateTime(recap.due_at)}</strong>
+                    {recap.due_at && !recap.completed ? <em><Countdown dueAt={recap.due_at} /></em> : null}
+                  </div>
+                )}
               </div>
             </article>
           ))}
@@ -110,7 +120,7 @@ export default async function Dashboard() {
       ) : (
         <section className="card empty-state compact">
           <span className="eyebrow">WEEKLY RECAP</span>
-          <h2>No open recap obligation.</h2>
+          <h2>No recap obligation yet.</h2>
           <p>Once a completed fantasy week is synced, the lowest scorer appears here automatically.</p>
         </section>
       )}

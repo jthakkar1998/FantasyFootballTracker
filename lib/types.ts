@@ -25,8 +25,18 @@ export interface Obligation extends ObligationInsert {
   id: string;
   completed: boolean;
   completed_at: string | null;
+  recap_upload_token_hash: string | null;
+  video_path: string | null;
+  video_uploaded_at: string | null;
+  video_original_filename: string | null;
+  video_size_bytes: number | null;
+  video_content_type: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RecapVideo extends Obligation {
+  video_url: string;
 }
 
 export interface EspnTeam {

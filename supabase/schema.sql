@@ -16,6 +16,12 @@ create table if not exists public.obligations (
   due_date date,
   completed boolean not null default false,
   completed_at timestamptz,
+  recap_upload_token_hash text,
+  video_path text,
+  video_uploaded_at timestamptz,
+  video_original_filename text,
+  video_size_bytes bigint,
+  video_content_type text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint obligation_due_shape check (
@@ -35,3 +41,7 @@ create index if not exists obligations_open_idx
 -- Next.js server using SUPABASE_SECRET_KEY, so public Data API access is denied.
 alter table public.obligations enable row level security;
 revoke all on table public.obligations from anon, authenticated;
+
+create unique index if not exists obligations_recap_upload_token_hash_idx
+  on public.obligations (recap_upload_token_hash)
+  where recap_upload_token_hash is not null;
