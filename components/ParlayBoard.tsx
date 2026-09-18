@@ -51,7 +51,7 @@ function submittedTime(iso: string) {
 function groupProps(props: ParlayPropOption[]) {
   const groups = new Map<string, ParlayPropOption[]>();
   for (const prop of props) {
-    const key = `${prop.statId}|${prop.marketName}|${prop.line ?? ""}`;
+    const key = `${prop.statId}|${prop.betTypeId}|${prop.marketName}|${prop.line ?? ""}`;
     const group = groups.get(key) ?? [];
     group.push(prop);
     groups.set(key, group);
@@ -245,7 +245,7 @@ export function ParlayBoard({
               </div>
               <div className="prop-groups">
                 {propGroups.map((group) => (
-                  <article className="prop-market" key={`${group[0].statId}-${group[0].line ?? "none"}`}>
+                  <article className="prop-market" key={`${group[0].statId}-${group[0].betTypeId}-${group[0].line ?? "none"}`}>
                     <div><strong>{group[0].marketName}</strong>{group[0].line ? <span>Line {group[0].line}</span> : null}</div>
                     <div className="prop-sides">
                       {group.map((prop) => (

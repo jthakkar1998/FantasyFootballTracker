@@ -3,6 +3,7 @@ export interface EligibleParlayPlayer {
   name: string;
   position: string;
   lineupSlotId: number;
+  proTeamId: number | null;
 }
 
 export interface ParlayTeamContext {
@@ -59,6 +60,7 @@ export interface ParlayPropOption {
   eventStartsAt: string;
   matchup: string;
   statId: string;
+  betTypeId: string;
   marketName: string;
   sideId: string;
   line: string | null;

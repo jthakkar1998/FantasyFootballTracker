@@ -33,7 +33,8 @@ function eligibleStarter(entry: EspnRosterEntry): EligibleParlayPlayer | null {
     espnPlayerId: entry.playerId,
     name,
     position: playerPosition(entry),
-    lineupSlotId: entry.lineupSlotId
+    lineupSlotId: entry.lineupSlotId,
+    proTeamId: player?.proTeamId ?? null
   };
 }
 

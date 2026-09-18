@@ -113,6 +113,18 @@ export interface NflEvent {
   id: string;
   date: string;
   name?: string;
+  competitions?: Array<{
+    competitors?: Array<{
+      homeAway?: string;
+      team?: {
+        id?: string;
+        displayName?: string;
+        shortDisplayName?: string;
+        name?: string;
+        abbreviation?: string;
+      };
+    }>;
+  }>;
 }
 
 export interface NflScoreboardResponse {
