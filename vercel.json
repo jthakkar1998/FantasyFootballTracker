@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/sync",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/parlay-lock",
+      "schedule": "30 15 * * 0"
+    },
+    {
+      "path": "/api/cron/parlay-lock-late",
+      "schedule": "30 16 * * 0"
     }
   ]
 }

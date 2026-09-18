@@ -73,6 +73,10 @@ Then visit `http://localhost:3000/admin`, log in with `ADMIN_PASSWORD`, and clic
 
 `vercel.json` registers a daily sync at `12:00 UTC`. On Vercel Hobby, cron jobs can run once per day and Vercel may invoke them at any point within the configured hour. That is fine here because finalized fantasy-week results only need a daily refresh. The commissioner button is available for immediate manual refreshes.
 
+## Sunday group parlay
+
+The separate `/parlay` page tracks one public FanDuel player-prop pick per fantasy team each week. Eligibility is based on the current ESPN opponent starting lineup, picks lock Sunday at 10:30 AM America/Chicago, and FanDuel props come from SportsGameOdds with a shared 10-minute cache. Run `supabase/parlay-migration.sql`, add `SPORTSGAMEODDS_API_KEY`, and see `PARLAY-UPGRADE.md` for setup.
+
 ## ESPN/NFL data sources
 
 The app reads the public ESPN Fantasy v3 endpoint for the league and uses:
@@ -133,3 +137,12 @@ For an existing database:
 8. A successful website upload automatically marks the recap complete and adds it to `/recaps`.
 
 The upload itself goes directly from the browser to Supabase using a short-lived signed upload token. The large video file never passes through a Vercel function. Camera recording works on secure contexts such as `https://...` production URLs and on `localhost`; the browser will ask the user for camera and microphone permission.
+
+## Commissioner recap-video management
+
+For any weekly recap with an uploaded video, `/admin` now shows:
+
+- **Replace video** — creates a new private submission link while leaving the current archive video untouched. After the replacement upload succeeds, the database switches to the new video and the old Storage object is deleted.
+- **Delete video** — requires browser confirmation, removes the video from Storage, clears its metadata, invalidates any outstanding recap link, and reopens the recap obligation.
+
+No additional Supabase migration or environment variables are required for this upgrade.

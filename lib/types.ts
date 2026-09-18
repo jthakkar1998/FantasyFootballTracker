@@ -54,7 +54,10 @@ export interface EspnRosterEntry {
   playerPoolEntry?: {
     appliedStatTotal?: number;
     player?: {
+      id?: number;
       fullName?: string;
+      defaultPositionId?: number;
+      proTeamId?: number;
       stats?: Array<{
         scoringPeriodId?: number;
         statSourceId?: number;
