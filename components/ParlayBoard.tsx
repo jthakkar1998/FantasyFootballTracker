@@ -190,7 +190,7 @@ export function ParlayBoard({
           <h2>Choose your fantasy team</h2>
           <label className="parlay-field">
             <span>Fantasy team</span>
-            <select value={teamId} onChange={(event) => chooseTeam(event.target.value)} disabled={context.locked}>
+            <select value={teamId} onChange={(event) => chooseTeam(event.target.value)}>
               <option value="">Select your team...</option>
               {context.teams.map((team) => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}
             </select>
