@@ -45,6 +45,12 @@ export interface ParlaySubmission {
   line: string | null;
   odds: string;
   bookmaker: string;
+  submitted_by_name: string | null;
+  withdrawn_at: string | null;
+  payment_confirmed_at: string | null;
+  payment_verified_at: string | null;
+  result_status: "pending" | "hit" | "miss" | "push" | "void";
+  graded_at: string | null;
   eligibility_at_lock: boolean | null;
   eligibility_reason: string | null;
   submitted_at: string;

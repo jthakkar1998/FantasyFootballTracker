@@ -275,3 +275,36 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
   .prop-side { flex: 1; }
   .league-pick-foot { flex-direction: column; }
 }
+
+/* Missing-pick notifications & Venmo pre-submit gate */
+.parlay-notify-panel { margin: 14px 0; padding: 14px; background: #111c23; border: 1px solid rgba(88,214,141,.23); border-radius: 13px; }
+.parlay-notify-panel > strong { font-size: 13px; }
+.parlay-notify-panel p, .parlay-notify-panel small { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.notify-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.notify-feedback { color: var(--success) !important; }
+.parlay-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 30; display: grid; place-items: center; padding: 15px; overflow: auto; }
+.parlay-payment-modal { width: min(460px,100%); padding: 25px; }
+.parlay-payment-modal h2 { font-size: 28px; letter-spacing: -.04em; margin: 8px 0; }
+.parlay-payment-modal p, .parlay-payment-modal small { color: var(--muted); line-height: 1.5; }
+.parlay-payment-modal a.button { display: inline-block; margin: 10px 0; text-align: center; }
+.payment-checkbox { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; color: var(--text); }
+.payment-checkbox input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--accent); }
+.payment-modal-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.parlay-history-link { margin: 4px 0 23px; }
+.parlay-result { display: inline-block; padding: 6px 10px; border-radius: 99px; text-transform: uppercase; font-size: 11px; font-weight: 850; background: #283342; color: var(--muted); }
+.parlay-result.hit { color: var(--success); background: rgba(88,214,141,.12); }
+.parlay-result.miss { color: var(--danger); background: rgba(255,107,107,.12); }
+.parlay-result.push, .parlay-result.void { color: var(--warning); background: rgba(244,201,93,.12); }
+.history-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px,1fr)); gap: 10px; margin: 22px 0; }
+.history-kpis > div { display: grid; gap: 5px; padding: 17px; }
+.history-kpis span { font-size: 11px; color: var(--muted); }
+.history-kpis strong { font-size: 30px; }
+.parlay-admin-status { padding: 19px; margin: 17px 0; }
+.parlay-admin-team-grid { margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 10px; }
+.parlay-admin-team-grid > div { display: grid; gap: 5px; border: 1px solid var(--line); border-radius: 11px; padding: 11px; }
+.parlay-admin-team-grid span { font-size: 12px; font-weight: bold; }
+.parlay-admin-team-grid b { color: var(--accent); font-size: 11px; }
+.parlay-admin-team-grid small, .admin-secondary { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.result-form { display: flex; align-items: center; gap: 6px; }
+.result-form select { background: #0d1118; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 10px 6px; }
+@media(max-width: 560px) { .payment-modal-buttons .button { flex: 1; } .parlay-payment-modal { padding: 18px; } }

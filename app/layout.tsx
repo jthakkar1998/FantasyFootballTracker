@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
+      <head><link rel="manifest" href="/manifest.webmanifest" /><meta name="theme-color" content="#0b0e13" /><link rel="apple-touch-icon" href="/icon-192.png" /></head>
       <body>
         <header className="site-header">
           <div className="shell header-inner">

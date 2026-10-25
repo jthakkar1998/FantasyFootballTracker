@@ -36,7 +36,7 @@ export function zonedLocalToIso(date: string, hour: number, minute: number, time
 }
 
 export function parlayDeadlineIso(sundayDate: string): string {
-  return zonedLocalToIso(sundayDate, 10, 30, leagueConfig.timeZone);
+  return zonedLocalToIso(sundayDate, 11, 55, "America/Chicago");
 }
 
 export function isSundayLocal(iso: string): boolean {
@@ -49,7 +49,7 @@ export function isOnLocalDate(iso: string, date: string): boolean {
 
 export function formatCentralDeadline(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: leagueConfig.timeZone,
+    timeZone: "America/Chicago",
     weekday: "long",
     month: "short",
     day: "numeric",

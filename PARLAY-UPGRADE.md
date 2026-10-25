@@ -11,7 +11,7 @@ This upgrade adds a separate `/parlay` page. It does not modify or reuse punishm
 - FanDuel lines come from the SportsGameOdds free API and are cached for 10 minutes.
 - One active pick is stored per fantasy team per fantasy week.
 - Picks are public to the whole league immediately.
-- Picks can be changed or withdrawn until Sunday at 10:30 AM America/Chicago.
+- Picks can be changed or withdrawn until Sunday at 11:55 AM America/Chicago.
 - The deadline is enforced on the server, not just in the browser.
 - The exact line and odds are saved. If the line changes before submission, the user must refresh before submitting.
 - Before the deadline, lineup eligibility is recalculated from ESPN. After lock, the saved lock eligibility is displayed.
@@ -91,7 +91,7 @@ Vercel will deploy the push automatically.
 
 The application computes the deadline from `America/Chicago`, so daylight saving time is handled automatically. The UI says CT rather than hard-coding CST/CDT.
 
-The API itself rejects every submit/change/withdraw request at or after 10:30 AM CT, so the betting deadline does not depend on a scheduled job.
+The API itself rejects every submit/change/withdraw request at or after 11:55 AM CT, so the betting deadline does not depend on a scheduled job.
 
 `vercel.json` also includes Sunday lock-snapshot cron jobs. On Vercel Hobby, cron timing is only hour-level precision, so the snapshot is best-effort; the page also creates the snapshot on the first request after the deadline if a cron has not already done it. The submission cutoff itself remains exact because it is checked synchronously on every request.
 

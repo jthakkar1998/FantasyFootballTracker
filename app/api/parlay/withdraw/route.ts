@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     if (!Number.isInteger(teamId)) return Response.json({ ok: false, error: "Choose a fantasy team." }, { status: 400 });
     const context = await getCurrentParlayContext();
     if (context.locked || Date.now() >= new Date(context.deadlineAt).getTime()) {
-      return Response.json({ ok: false, error: "Picks locked Sunday at 10:30 AM CT." }, { status: 409 });
+      return Response.json({ ok: false, error: "Picks locked Sunday at 11:55 AM CT." }, { status: 409 });
     }
     getTeamContext(context, teamId);
     await withdrawParlaySubmission(context.season, context.week, teamId);
