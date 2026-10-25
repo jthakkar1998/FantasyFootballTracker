@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Countdown } from "@/components/Countdown";
 import { ParlayBoard } from "@/components/ParlayBoard";
 import { databaseConfigured } from "@/lib/supabase";
@@ -53,10 +54,11 @@ export default async function ParlayPage() {
             <em>{context.locked ? "No changes or withdrawals" : <Countdown dueAt={context.deadlineAt} />}</em>
           </div>
         </section>
+        <p className="parlay-history-link"><Link className="button ghost" href="/parlay/history">View previous bets & results →</Link></p>
         <div className="parlay-rules-row">
-          <span>FanDuel only</span><span>Opponent starters only</span><span>Sunday games only</span><span>1 pick per team</span>
+          <span>FanDuel only</span><span>Opponent starters only</span><span>Sunday games only</span><span>1 pick per team</span><span>$1 Venmo confirmation</span>
         </div>
-        <ParlayBoard context={{ ...context, locked: now >= deadlineMs }} picks={picks} oddsConfigured={sportsOddsConfigured()} />
+        <ParlayBoard context={{ ...context, locked: now >= deadlineMs }} picks={picks} oddsConfigured={sportsOddsConfigured()} vapidPublicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null} venmoUrl={process.env.NEXT_PUBLIC_VENMO_URL ?? null} />
       </>
     );
   } catch (error) {

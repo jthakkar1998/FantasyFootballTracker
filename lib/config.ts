@@ -1,7 +1,7 @@
 export const leagueConfig = {
   leagueId: Number(process.env.ESPN_LEAGUE_ID ?? "666066604"),
   season: Number(process.env.ESPN_SEASON ?? "2026"),
-  timeZone: process.env.LEAGUE_TIME_ZONE ?? "America/New_York",
+  timeZone: process.env.LEAGUE_TIME_ZONE ?? "America/Chicago",
   benchSlotIds: new Set([20, 21]),
   // ESPN's standard football lineup-slot labels. Unknown custom IDs still work;
   // they simply render as "Slot <id>".

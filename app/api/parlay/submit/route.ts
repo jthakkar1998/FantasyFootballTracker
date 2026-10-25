@@ -4,17 +4,21 @@ import { getFanDuelProps } from "@/lib/sports-odds";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { teamId?: number; espnPlayerId?: number; oddId?: string; line?: string | null; odds?: string };
+    const body = await request.json() as { teamId?: number; espnPlayerId?: number; oddId?: string; line?: string | null; odds?: string; submittedBy?: string; paymentConfirmed?: boolean };
     const teamId = Number(body.teamId);
     const espnPlayerId = Number(body.espnPlayerId);
     const oddId = String(body.oddId ?? "");
+    const submittedBy = String(body.submittedBy ?? "").trim();
+    if (!body.paymentConfirmed || submittedBy.length < 2 || submittedBy.length > 80) {
+      return Response.json({ ok: false, error: "Enter your name and confirm the $1 Venmo payment before submitting." }, { status: 400 });
+    }
     if (!Number.isInteger(teamId) || !Number.isInteger(espnPlayerId) || !oddId) {
       return Response.json({ ok: false, error: "Incomplete parlay selection." }, { status: 400 });
     }
 
     const context = await getCurrentParlayContext();
     if (context.locked || Date.now() >= new Date(context.deadlineAt).getTime()) {
-      return Response.json({ ok: false, error: "Picks locked Sunday at 10:30 AM CT." }, { status: 409 });
+      return Response.json({ ok: false, error: "Picks locked Sunday at 11:55 AM CT." }, { status: 409 });
     }
     const team = getTeamContext(context, teamId);
     const player = getEligiblePlayer(context, teamId, espnPlayerId);
@@ -30,6 +34,10 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, error: "That player's NFL game has already started." }, { status: 409 });
     }
 
+    // Odds lookup can take several seconds; reject if it crossed the Sunday cutoff.
+    if (Date.now() >= new Date(context.deadlineAt).getTime()) {
+      return Response.json({ ok: false, error: "Picks locked Sunday at 11:55 AM CT." }, { status: 409 });
+    }
     const saved = await upsertParlaySubmission({
       season: context.season,
       week: context.week,
@@ -49,7 +57,9 @@ export async function POST(request: Request) {
       side_id: selected.sideId,
       line: selected.line,
       odds: selected.odds,
-      bookmaker: "fanduel"
+      bookmaker: "fanduel",
+      submitted_by_name: submittedBy,
+      payment_confirmed_at: new Date().toISOString()
     });
     return Response.json({ ok: true, submission: saved });
   } catch (error) {

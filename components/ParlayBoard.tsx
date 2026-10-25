@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ParlayNotifications } from "./ParlayNotifications";
 import { useRouter } from "next/navigation";
 import type { ParlayPropOption, ParlaySubmission, ParlayTeamContext, ParlayWeekContext } from "@/lib/parlay-types";
 
@@ -62,11 +63,15 @@ function groupProps(props: ParlayPropOption[]) {
 export function ParlayBoard({
   context,
   picks,
-  oddsConfigured
+  oddsConfigured,
+  vapidPublicKey,
+  venmoUrl
 }: {
   context: ParlayWeekContext;
   picks: PickView[];
   oddsConfigured: boolean;
+  vapidPublicKey: string | null;
+  venmoUrl: string | null;
 }) {
   const router = useRouter();
   const [teamId, setTeamId] = useState<number | "">("");
@@ -78,6 +83,9 @@ export function ParlayBoard({
   const [showAll, setShowAll] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentChecked, setPaymentChecked] = useState(false);
+  const [submittedBy, setSubmittedBy] = useState("");
 
   const selectedTeam = context.teams.find((team) => team.teamId === teamId) ?? null;
   const currentPick = picks.find((pick) => pick.team_id === teamId) ?? null;
@@ -101,6 +109,9 @@ export function ParlayBoard({
     setSelectedProp(null);
     setMessage(null);
     setShowAll(false);
+    setPaymentModalOpen(false);
+    setPaymentChecked(false);
+    setSubmittedBy("");
   }
 
   async function loadProps(espnPlayerId: number) {
@@ -124,6 +135,7 @@ export function ParlayBoard({
   }
 
   async function submitPick() {
+    if (!paymentChecked || submittedBy.trim().length < 2) return;
     if (!selectedTeam || !selectedPlayerId || !selectedProp) return;
     setBusy(true);
     setMessage(null);
@@ -131,13 +143,15 @@ export function ParlayBoard({
       const response = await fetch("/api/parlay/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId: selectedTeam.teamId, espnPlayerId: selectedPlayerId, oddId: selectedProp.oddId, line: selectedProp.line, odds: selectedProp.odds })
+        body: JSON.stringify({ teamId: selectedTeam.teamId, espnPlayerId: selectedPlayerId, oddId: selectedProp.oddId, line: selectedProp.line, odds: selectedProp.odds, submittedBy: submittedBy.trim(), paymentConfirmed: true })
       });
       const body = await response.json();
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not submit pick.");
       setMessage("Pick submitted. Everyone on the league page can now see it.");
       setSelectedProp(null);
       setPropData(null);
+      setPaymentModalOpen(false);
+      setPaymentChecked(false);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit pick.");
@@ -183,7 +197,9 @@ export function ParlayBoard({
           </label>
 
           {selectedTeam ? (
+
             <>
+              <ParlayNotifications teamId={selectedTeam.teamId} publicKey={vapidPublicKey} />
               <div className="opponent-callout">
                 <span>WEEK {context.week} OPPONENT</span>
                 <strong>{selectedTeam.opponentTeamName}</strong>
@@ -272,7 +288,7 @@ export function ParlayBoard({
                   <span className="eyebrow">REVIEW PICK</span>
                   <strong>{selectedProp.playerName}</strong>
                   <p>{sideLabel(selectedProp)} · {selectedProp.marketName} <b>{priceLabel(selectedProp.odds)}</b></p>
-                  <button className="button primary" type="button" onClick={submitPick} disabled={busy}>{currentPick ? "Change to this pick" : "Submit this pick"}</button>
+                  <button className="button primary" type="button" onClick={() => { setPaymentChecked(false); setPaymentModalOpen(true); }} disabled={busy}>{currentPick ? "Change to this pick" : "Submit this pick"}</button>
                   <small>The line and price shown here are saved exactly as displayed at submission.</small>
                 </div>
               ) : null}
@@ -281,6 +297,28 @@ export function ParlayBoard({
         </div>
       </section>
 
+      {paymentModalOpen && selectedTeam && selectedProp ? (
+        <div className="parlay-modal-overlay" onClick={() => setPaymentModalOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="venmo-confirm-title" className="card parlay-payment-modal" onClick={(event) => event.stopPropagation()}>
+            <span className="eyebrow">ONE LAST THING</span>
+            <h2 id="venmo-confirm-title">Have you Venmo&apos;d Jay $1?</h2>
+            <p>Send Jay the $1 weekly parlay contribution before submitting. One payment covers this team&apos;s weekly entry, even if you change your pick.</p>
+            {venmoUrl ? <a className="button primary" href={venmoUrl} target="_blank" rel="noopener noreferrer">Open Jay&apos;s Venmo ↗</a> : <p className="parlay-muted">Use your usual Venmo contact for Jay.</p>}
+            <label className="parlay-field"><span>Your name (who is submitting?)</span>
+              <input value={submittedBy} onChange={(event) => setSubmittedBy(event.target.value.slice(0, 80))} maxLength={80} placeholder="Your first name or nickname" autoComplete="name" />
+            </label>
+            <label className="payment-checkbox"><input type="checkbox" checked={paymentChecked} onChange={(event) => setPaymentChecked(event.target.checked)} />
+              <span>I confirm I&apos;ve sent Jay $1 on Venmo for this week.</span>
+            </label>
+            <small>Jay will independently mark the payment received. This confirmation isn&apos;t proof of payment.</small>
+            <div className="payment-modal-buttons">
+              <button className="button ghost" type="button" onClick={() => setPaymentModalOpen(false)} disabled={busy}>Cancel</button>
+              <button className="button primary" type="button" onClick={submitPick} disabled={busy || !paymentChecked || submittedBy.trim().length < 2}>{busy ? "Submitting…" : "Confirm and submit pick"}</button>
+            </div>
+            {message ? <p className="notice error" role="alert">{message}</p> : null}
+          </div>
+        </div>
+      ) : null}
       <section className="section-block">
         <div className="section-heading">
           <div><span className="eyebrow">COMMUNITY BOARD</span><h2>League picks</h2></div>
@@ -294,7 +332,7 @@ export function ParlayBoard({
                 <div className="league-pick-top"><strong>{team.teamName}</strong><span>vs {team.opponentTeamName}</span></div>
                 {pick ? (
                   <>
-                    <div className="league-pick-main"><strong>{pick.player_name}</strong><span>{pick.market_name}</span></div>
+                    <div className="league-pick-main"><strong>{pick.player_name}</strong><span>{pick.market_name}</span>{pick.submitted_by_name ? <span>Submitted by {pick.submitted_by_name}</span> : null}</div>
                     <div className="league-pick-line"><b>{submissionSideLabel(pick)}</b><strong>{priceLabel(pick.odds)}</strong></div>
                     <div className="league-pick-foot">
                       <span>{pick.currentEligible ? "✓ Eligible" : "⚠ Needs a new pick"}</span>

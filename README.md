@@ -75,7 +75,7 @@ Then visit `http://localhost:3000/admin`, log in with `ADMIN_PASSWORD`, and clic
 
 ## Sunday group parlay
 
-The separate `/parlay` page tracks one public FanDuel player-prop pick per fantasy team each week. Eligibility is based on the current ESPN opponent starting lineup, picks lock Sunday at 10:30 AM America/Chicago, and FanDuel props come from SportsGameOdds with a shared 10-minute cache. Run `supabase/parlay-migration.sql`, add `SPORTSGAMEODDS_API_KEY`, and see `PARLAY-UPGRADE.md` for setup.
+The separate `/parlay` page tracks one public FanDuel player-prop pick per fantasy team each week. Eligibility is based on the current ESPN opponent starting lineup, picks lock Sunday at 11:55 AM America/Chicago, and FanDuel props come from SportsGameOdds with a shared 10-minute cache. Run `supabase/parlay-migration.sql`, add `SPORTSGAMEODDS_API_KEY`, and see `PARLAY-UPGRADE.md` for setup.
 
 ## ESPN/NFL data sources
 
@@ -146,3 +146,17 @@ For any weekly recap with an uploaded video, `/admin` now shows:
 - **Delete video** — requires browser confirmation, removes the video from Storage, clears its metadata, invalidates any outstanding recap link, and reopens the recap obligation.
 
 No additional Supabase migration or environment variables are required for this upgrade.
+
+
+## October 2026: parlay reminders, history & $1 payment tracking
+
+See **PARLAY-REMINDERS-SETUP.md** for deployment steps. This update:
+
+- Moves the submission deadline to **11:55 AM Chicago time**, observing CDT/CST.
+- Adds free Web Push reminders to registered phones for **missing** team submissions only: Thursday, Friday, Saturday at 8 PM; Sunday at 9 AM and 11:30 AM (urgent).
+- Allows a fantasy owner to enable reminders for their team from `/parlay` (same honor system as the pick form).
+- Adds `/parlay/history` and admin-only grading (`pending/hit/miss/push/void`) and independent $1 Venmo verification.
+- Requires submitting members to enter their name and affirm their $1 payment before saving their pick.
+- Preserves the payment record when a member withdraws a pick and subsequently re-submits.
+
+**Run the new additive SQL migration** `supabase/parlay-reminders-history-migration.sql` before deploying code. Configure VAPID keys in Vercel and a GitHub Actions scheduled workflow as explained in the guide. The source code has no new npm dependencies.

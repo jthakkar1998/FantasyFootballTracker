@@ -21,6 +21,8 @@ export interface ParlaySubmissionInput {
   line: string | null;
   odds: string;
   bookmaker: string;
+  submitted_by_name: string;
+  payment_confirmed_at: string;
 }
 
 export async function listParlaySubmissions(season: number, week: number): Promise<ParlaySubmission[]> {
@@ -29,6 +31,7 @@ export async function listParlaySubmissions(season: number, week: number): Promi
     .select("*")
     .eq("season", season)
     .eq("week", week)
+    .is("withdrawn_at", null)
     .order("team_name", { ascending: true });
   if (error) throw new Error(`Could not load parlay picks: ${error.message}`);
   return (data ?? []) as ParlaySubmission[];
@@ -36,11 +39,20 @@ export async function listParlaySubmissions(season: number, week: number): Promi
 
 export async function upsertParlaySubmission(input: ParlaySubmissionInput): Promise<ParlaySubmission> {
   const now = new Date().toISOString();
+  const { data: existing, error: existingError } = await getDb().from("parlay_submissions")
+    .select("submitted_at,payment_confirmed_at,payment_verified_at")
+    .eq("season", input.season).eq("week", input.week).eq("team_id", input.team_id).maybeSingle();
+  if (existingError) throw new Error(`Could not check existing payment status: ${existingError.message}`);
   const payload = {
     ...input,
+    withdrawn_at: null,
+    result_status: "pending",
+    graded_at: null,
+    payment_confirmed_at: existing?.payment_confirmed_at ?? input.payment_confirmed_at,
+    payment_verified_at: existing?.payment_verified_at ?? null,
     eligibility_at_lock: null,
     eligibility_reason: null,
-    submitted_at: now,
+    submitted_at: existing?.submitted_at ?? now,
     updated_at: now
   };
   const { data, error } = await getDb()
@@ -55,7 +67,7 @@ export async function upsertParlaySubmission(input: ParlaySubmissionInput): Prom
 export async function withdrawParlaySubmission(season: number, week: number, teamId: number): Promise<void> {
   const { error } = await getDb()
     .from("parlay_submissions")
-    .delete()
+    .update({ withdrawn_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("season", season)
     .eq("week", week)
     .eq("team_id", teamId);
@@ -82,21 +94,24 @@ export async function setCachedOdds(cacheKey: string, payload: unknown, fetchedA
   if (error) throw new Error(`Could not save odds cache: ${error.message}`);
 }
 
-export async function getParlayWeekLock(season: number, week: number): Promise<string | null> {
+export async function getParlayWeekLock(season: number, week: number): Promise<{lockedAt: string; deadlineAt: string} | null> {
   const { data, error } = await getDb()
     .from("parlay_week_locks")
-    .select("locked_at")
+    .select("locked_at,deadline_at")
     .eq("season", season)
     .eq("week", week)
     .maybeSingle();
   if (error) throw new Error(`Could not read parlay lock: ${error.message}`);
-  return data?.locked_at ? String(data.locked_at) : null;
+  return data?.locked_at ? { lockedAt: String(data.locked_at), deadlineAt: String(data.deadline_at) } : null;
 }
 
 export async function ensureParlayWeekLocked(context: ParlayWeekContext): Promise<boolean> {
   const deadlineMs = new Date(context.deadlineAt).getTime();
   if (Date.now() < deadlineMs) return false;
-  if (await getParlayWeekLock(context.season, context.week)) return true;
+  const previousLock = await getParlayWeekLock(context.season, context.week);
+  // If the commissioner changes the deadline, re-snapshot using the new cutoff
+  // instead of accepting a lock made at the old time.
+  if (previousLock?.deadlineAt === context.deadlineAt) return true;
 
   const submissions = await listParlaySubmissions(context.season, context.week);
   const db = getDb();
@@ -126,4 +141,31 @@ export async function ensureParlayWeekLocked(context: ParlayWeekContext): Promis
   }, { onConflict: "season,week" });
   if (lockError) throw new Error(`Could not save parlay lock: ${lockError.message}`);
   return true;
+}
+
+export async function listParlayHistory(season?: number): Promise<ParlaySubmission[]> {
+  let query = getDb().from("parlay_submissions").select("*");
+  if (season !== undefined) query = query.eq("season", season);
+  const { data, error } = await query.order("season", { ascending: false })
+    .order("week", { ascending: false }).order("team_name", { ascending: true }).limit(500);
+  if (error) throw new Error(`Could not load parlay history: ${error.message}`);
+  return (data ?? []) as ParlaySubmission[];
+}
+
+export async function updateParlayAdminStatus(args: {
+  id: string;
+  kind: "result" | "payment";
+  value: string;
+}): Promise<void> {
+  if (!/^[a-f0-9-]{36}$/i.test(args.id)) throw new Error("Invalid pick identifier.");
+  let patch: Record<string, string | null>;
+  if (args.kind === "result") {
+    if (!["pending", "hit", "miss", "push", "void"].includes(args.value)) throw new Error("Invalid result.");
+    patch = { result_status: args.value, graded_at: args.value === "pending" ? null : new Date().toISOString() };
+  } else if (args.kind === "payment") {
+    if (!["verified", "unverified"].includes(args.value)) throw new Error("Invalid payment action.");
+    patch = { payment_verified_at: args.value === "verified" ? new Date().toISOString() : null };
+  } else throw new Error("Invalid update type.");
+  const { error } = await getDb().from("parlay_submissions").update(patch).eq("id", args.id);
+  if (error) throw new Error(`Could not update pick: ${error.message}`);
 }
