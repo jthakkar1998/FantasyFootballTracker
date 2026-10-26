@@ -308,3 +308,15 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .result-form { display: flex; align-items: center; gap: 6px; }
 .result-form select { background: #0d1118; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 10px 6px; }
 @media(max-width: 560px) { .payment-modal-buttons .button { flex: 1; } .parlay-payment-modal { padding: 18px; } }
+
+/* Complete commissioner week-by-team grid (including historical off-app bets). */
+.parlay-commissioner-table { margin-top: 16px; }
+.parlay-commissioner-table td { vertical-align: middle; }
+.parlay-commissioner-table .parlay-week-first-row td { border-top: 2px solid rgba(215,255,63,.33); }
+.parlay-commissioner-table .parlay-admin-bet-cell { min-width: 235px; max-width: 360px; }
+.parlay-no-website-pick { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.parlay-offapp-label { color: var(--accent); font-size: 12px; }
+.parlay-offapp-details-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.parlay-offapp-details-form input { min-width: 165px; flex: 1; font-size: 12px; padding: 9px; }
+.parlay-offapp-details-form .button { padding: 9px 10px; }
+.parlay-commissioner-table .button { white-space: nowrap; }
