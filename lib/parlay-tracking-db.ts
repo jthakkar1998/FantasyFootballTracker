@@ -61,3 +61,50 @@ export async function updateParlayWeeklyTeamTracking(args: {
     .eq("season", season).eq("week", week).eq("team_id", teamId);
   if (error) throw new Error(`Could not update weekly tracking record: ${error.message}`);
 }
+
+/** Update multiple fields in one record without resetting unrelated payment data. */
+export async function updateParlayWeeklyTeamTrackingFields(args: {
+  season: number;
+  week: number;
+  teamId: number;
+  outside?: boolean;
+  details?: string;
+  result?: "pending" | "hit" | "miss" | "push" | "void";
+  paymentReceived?: boolean;
+}): Promise<void> {
+  const { season, week, teamId } = args;
+  if (!Number.isInteger(season) || season < 2000 || season > 2100 ||
+      !Number.isInteger(week) || week < 1 || week > 22 ||
+      !Number.isInteger(teamId) || teamId < 1) throw new Error("Invalid season, week, or team.");
+  const db = getDb();
+  const now = new Date().toISOString();
+  const patch: Record<string, string | boolean | null> = { updated_at: now };
+  if (args.outside !== undefined) {
+    if (args.outside) {
+      const { data, error } = await db.from("parlay_submissions").select("id")
+        .eq("season", season).eq("week", week).eq("team_id", teamId)
+        .is("withdrawn_at", null).maybeSingle();
+      if (error) throw new Error(`Could not verify website submission: ${error.message}`);
+      if (data) throw new Error("This team already has an active website pick.");
+    }
+    patch.submitted_outside_app = args.outside;
+  }
+  if (args.details !== undefined) {
+    if (args.details.length > 400) throw new Error("Off-app bet description must be 400 characters or fewer.");
+    patch.outside_bet_details = args.details.trim() || null;
+  }
+  if (args.result !== undefined) {
+    if (!["pending", "hit", "miss", "push", "void"].includes(args.result)) throw new Error("Invalid outcome.");
+    patch.outside_result_status = args.result;
+    patch.outside_graded_at = args.result === "pending" ? null : now;
+  }
+  if (args.paymentReceived !== undefined) patch.payment_verified_at = args.paymentReceived ? now : null;
+  if (Object.keys(patch).length === 1) return;
+
+  const { error: seedError } = await db.from("parlay_weekly_team_tracking")
+    .upsert({ season, week, team_id: teamId }, { onConflict: "season,week,team_id", ignoreDuplicates: true });
+  if (seedError) throw new Error(`Could not create weekly tracking record: ${seedError.message}`);
+  const { error } = await db.from("parlay_weekly_team_tracking").update(patch)
+    .eq("season", season).eq("week", week).eq("team_id", teamId);
+  if (error) throw new Error(`Could not update weekly tracking record: ${error.message}`);
+}
