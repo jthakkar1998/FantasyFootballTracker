@@ -320,3 +320,53 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .parlay-offapp-details-form input { min-width: 165px; flex: 1; font-size: 12px; padding: 9px; }
 .parlay-offapp-details-form .button { padding: 9px 10px; }
 .parlay-commissioner-table .button { white-space: nowrap; }
+
+/* Commissioner bulk edit: legible columns, explicit save feedback, CSV intake. */
+.commissioner-bulk-toolbar { padding: 16px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 20px 0 10px; }
+.commissioner-bulk-filters, .commissioner-bulk-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.commissioner-bulk-filters label { margin: 0; display: grid; gap: 5px; font-size: 11px; }
+.commissioner-bulk-filters select, .commissioner-bulk-filters input { min-width: 120px; max-width: 190px; padding: 10px; border: 1px solid var(--line); background: #0d1118; border-radius: 9px; color: var(--text); font: inherit; }
+.commissioner-bulk-actions .button { font-size: 12px; }
+.commissioner-csv-input { display: none; }
+.commissioner-bulk-instructions { color: var(--muted); line-height: 1.6; font-size: 12px; }
+.commissioner-bulk-instructions code { color: var(--text); }
+.commissioner-save-banner { min-height: 37px; padding: 10px 12px; background: rgba(88,214,141,.065); color: var(--success); font-size: 12px; border-radius: 10px; margin: 12px 0; border: 1px solid rgba(88,214,141,.2); }
+.commissioner-save-banner.is-error { background: rgba(255,107,107,.09); border-color: rgba(255,107,107,.25); color: #ff9a9a; }
+.commissioner-bulk-table-wrap { overflow-x: auto; margin-top: 8px; }
+.commissioner-bulk-table { width: 100%; min-width: 1250px; table-layout: fixed; }
+.commissioner-bulk-table col.week-col { width: 65px; }
+.commissioner-bulk-table col.team-col { width: 142px; }
+.commissioner-bulk-table col.bet-col { width: 280px; }
+.commissioner-bulk-table col.source-col { width: 132px; }
+.commissioner-bulk-table col.member-col { width: 113px; }
+.commissioner-bulk-table col.payment-col { width: 150px; }
+.commissioner-bulk-table col.result-col { width: 135px; }
+.commissioner-bulk-table col.save-col { width: 175px; }
+.commissioner-bulk-table th, .commissioner-bulk-table td { padding: 13px 10px; overflow-wrap: anywhere; }
+.commissioner-bulk-table .parlay-admin-bet-cell { min-width: 0; max-width: none; }
+.commissioner-bet-input { display: block; width: 100%; margin-top: 7px; padding: 9px 10px; font-size: 12px; }
+.commissioner-flag { display: inline-flex; max-width: 100%; text-align: center; justify-content: center; white-space: normal; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; font-size: 12px; font-weight: 750; cursor: pointer; }
+.commissioner-flag.is-on { background: rgba(88,214,141,.12); color: var(--success); border-color: rgba(88,214,141,.33); }
+.commissioner-flag:disabled { opacity: .55; cursor: progress; }
+.commissioner-member-note { font-size: 11px; color: var(--muted); }
+.commissioner-result-select { display: block; width: 100%; min-width: 100px; appearance: auto; background: #0d1118; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 10px 9px; font-size: 13px; }
+.commissioner-save-cell { display: grid; gap: 7px; align-items: start; }
+.commissioner-save-cell .button { width: 100%; font-size: 11px; white-space: normal; }
+.commissioner-row-status { color: var(--muted); font-size: 11px; font-weight: 700; }
+.commissioner-row-status.is-saved { color: var(--success); }
+.commissioner-row-status.is-dirty { color: var(--warning); }
+.commissioner-row-status.is-error, .commissioner-row-error { color: #ff9a9a; }
+.commissioner-row-error { font-size: 10px; line-height: 1.5; }
+.commissioner-row-saved { background: rgba(88,214,141,.035); }
+.commissioner-bulk-footer { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
+@media (max-width: 750px) { .commissioner-bulk-toolbar, .commissioner-bulk-filters, .commissioner-bulk-actions { width: 100%; } .commissioner-bulk-actions .button { flex: 1; } }
+/* Result comes immediately after Bet so the selection is always visible first. */
+.commissioner-bulk-table { min-width: 1100px; }
+.commissioner-bulk-table col.week-col { width: 60px; }
+.commissioner-bulk-table col.team-col { width: 128px; }
+.commissioner-bulk-table col.bet-col { width: 250px; }
+.commissioner-bulk-table col.result-col { width: 130px; }
+.commissioner-bulk-table col.source-col { width: 124px; }
+.commissioner-bulk-table col.member-col { width: 100px; }
+.commissioner-bulk-table col.payment-col { width: 140px; }
+.commissioner-bulk-table col.save-col { width: 168px; }
