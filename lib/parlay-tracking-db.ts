@@ -38,13 +38,24 @@ export async function updateParlayWeeklyTeamTracking(args: {
       if (data) throw new Error("This team already has an active website pick.");
     }
     patch.submitted_outside_app = value === "yes";
+    if (value === "yes") {
+      const { data, error } = await db.from("parlay_weekly_team_tracking")
+        .select("outside_result_status").eq("season", season).eq("week", week)
+        .eq("team_id", teamId).maybeSingle();
+      if (error) throw new Error(`Could not read existing tracking: ${error.message}`);
+      if (data?.outside_result_status === "no_bet") patch.outside_result_status = "pending";
+    }
   } else if (action === "payment") {
     if (!['verified', 'unverified'].includes(value)) throw new Error("Invalid payment update.");
     patch.payment_verified_at = value === "verified" ? now : null;
   } else if (action === "outside_result") {
-    if (!["pending", "hit", "miss", "push", "void"].includes(value)) throw new Error("Invalid outcome.");
+    if (!["pending", "hit", "miss", "push", "void", "no_bet"].includes(value)) throw new Error("Invalid outcome.");
     patch.outside_result_status = value;
-    patch.outside_graded_at = value === "pending" ? null : now;
+    patch.outside_graded_at = value === "pending" || value === "no_bet" ? null : now;
+    if (value === "no_bet") {
+      patch.submitted_outside_app = false;
+      patch.outside_bet_details = null;
+    }
   } else if (action === "outside_details") {
     if (value.length > 400) throw new Error("Off-app bet description must be 400 characters or fewer.");
     patch.outside_bet_details = value.trim() || null;
@@ -69,7 +80,7 @@ export async function updateParlayWeeklyTeamTrackingFields(args: {
   teamId: number;
   outside?: boolean;
   details?: string;
-  result?: "pending" | "hit" | "miss" | "push" | "void";
+  result?: "pending" | "hit" | "miss" | "push" | "void" | "no_bet";
   paymentReceived?: boolean;
 }): Promise<void> {
   const { season, week, teamId } = args;
@@ -79,6 +90,16 @@ export async function updateParlayWeeklyTeamTrackingFields(args: {
   const db = getDb();
   const now = new Date().toISOString();
   const patch: Record<string, string | boolean | null> = { updated_at: now };
+  if (args.result === "no_bet" && (args.outside !== false || (args.details !== undefined && args.details.trim() !== ""))) {
+    throw new Error("No Bet Placed requires outside=false and empty bet details.");
+  }
+  if (args.result === "no_bet") {
+    const { data, error } = await db.from("parlay_submissions").select("id")
+      .eq("season", season).eq("week", week).eq("team_id", teamId)
+      .is("withdrawn_at", null).maybeSingle();
+    if (error) throw new Error(`Could not verify website submission: ${error.message}`);
+    if (data) throw new Error("An existing website pick cannot be marked No Bet Placed.");
+  }
   if (args.outside !== undefined) {
     if (args.outside) {
       const { data, error } = await db.from("parlay_submissions").select("id")
@@ -94,9 +115,9 @@ export async function updateParlayWeeklyTeamTrackingFields(args: {
     patch.outside_bet_details = args.details.trim() || null;
   }
   if (args.result !== undefined) {
-    if (!["pending", "hit", "miss", "push", "void"].includes(args.result)) throw new Error("Invalid outcome.");
+    if (!["pending", "hit", "miss", "push", "void", "no_bet"].includes(args.result)) throw new Error("Invalid outcome.");
     patch.outside_result_status = args.result;
-    patch.outside_graded_at = args.result === "pending" ? null : now;
+    patch.outside_graded_at = args.result === "pending" || args.result === "no_bet" ? null : now;
   }
   if (args.paymentReceived !== undefined) patch.payment_verified_at = args.paymentReceived ? now : null;
   if (Object.keys(patch).length === 1) return;

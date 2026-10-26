@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ParlayCommissionerRow } from "@/lib/parlay-admin";
 import {
-  diffBet, exportBetsCsv, importBetsCsv, initialBet, results, rowKey,
+  diffBet, exportBetsCsv, importBetsCsv, initialBet, needsPaymentFollowUp, results, rowKey,
   type BetUpdate, type EditableBet, type BetResult
 } from "@/lib/parlay-bulk";
 
@@ -46,7 +46,7 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
 
   const unverified = rows.filter(row => {
     const entry = drafts[rowKey(row.season, row.week, row.teamId)];
-    return (row.hasWebsitePick || entry.source === "outside") && !entry.paid;
+    return needsPaymentFollowUp(row, entry);
   }).length;
 
   function edit(key: string, patch: Partial<EditableBet>) {
@@ -173,7 +173,7 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
           </button>
         </div>
       </div>
-      <p className="commissioner-bulk-instructions">Edit several rows or weeks without refreshing. <strong>Save all changes</strong> when ready. For Excel: download the CSV, fill in <code>source</code> (outside/none/website), <code>bet_details</code>, <code>result</code> (hit/miss/push/void/pending), and <code>payment_received</code> (yes/no), then import it here and save. The CSV uses team IDs so identical team names are not confused. Website picks cannot be replaced by CSV.</p>
+      <p className="commissioner-bulk-instructions">Edit several rows or weeks without refreshing. <strong>Save all changes</strong> when ready. To record no wager, select <strong>No Bet Placed</strong> under Result; Venmo will show <strong>Not applicable</strong>. For Excel: use <code>source</code> (outside/none/website), <code>bet_details</code>, <code>result</code> (hit/miss/push/void/pending/<strong>no_bet</strong>), and <code>payment_received</code> (yes/no, or n/a for no_bet). A no_bet row needs <code>source=none</code> and empty bet details. CSV imports never save until you click Save all changes. Existing website picks cannot be marked no_bet.</p>
       <div className={`commissioner-save-banner ${message.startsWith("CSV not imported") || message.includes("failed") ? "is-error" : ""}`} role="status" aria-live="polite">
         {message || (unsavedCount ? `${unsavedCount} row(s) have unsaved changes.` : "All displayed changes are up to date. Saved rows turn green.")}
       </div>
@@ -184,35 +184,42 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
           <tbody>{visibleRows.length ? visibleRows.map((row, index) => {
             const key = rowKey(row.season, row.week, row.teamId);
             const draft = drafts[key];
+            const noBet = draft.result === "no_bet";
             const dirty = pendingKeys.has(key);
             const status = saveStates[key];
             const pick = row.pick;
             return <tr key={key} id={`parlay-row-${row.season}-${row.week}-${row.teamId}`}
-              className={`${index === 0 || visibleRows[index - 1].week !== row.week ? "parlay-week-first-row" : ""} ${status === "saved" && !dirty ? "commissioner-row-saved" : ""}`}>
+              className={`${index === 0 || visibleRows[index - 1].week !== row.week ? "parlay-week-first-row" : ""} ${status === "saved" && !dirty ? "commissioner-row-saved" : ""} ${noBet ? "commissioner-row-no-bet" : ""}`}>
               <td><strong>W{row.week}</strong><div className="admin-secondary">{row.season}</div></td>
               <td><strong>{row.teamName}</strong><div className="admin-secondary">{pick?.submitted_by_name || ""}{pick?.withdrawn_at ? " · Website pick withdrawn" : ""}</div></td>
               <td className="parlay-admin-bet-cell">{row.hasWebsitePick && pick ? <>
                 <strong>{pick.player_name}</strong><div className="admin-secondary">{pick.market_name} · {pick.side_id} {pick.line ?? ""} ({pick.odds})</div>
               </> : <>
-                {draft.source === "outside" ? <strong className="parlay-offapp-label">Submitted outside the website</strong>
+                {noBet ? <strong className="commissioner-no-bet-label">No bet placed</strong>
+                  : draft.source === "outside" ? <strong className="parlay-offapp-label">Submitted outside the website</strong>
                   : <span className="parlay-no-website-pick">{pick?.withdrawn_at ? "Website pick withdrawn; no active pick" : "Did not submit a pick through the website"}</span>}
-                <input className="commissioner-bet-input" maxLength={400} value={draft.details} disabled={busy}
+                {!noBet ? <input className="commissioner-bet-input" maxLength={400} value={draft.details} disabled={busy}
                   onChange={event => edit(key, { details: event.target.value, source: event.target.value.trim() ? "outside" : draft.source })}
-                  placeholder="Enter off-app bet details..." aria-label={`Off-app bet details for ${row.teamName}, Week ${row.week}`}/>
+                  placeholder="Enter off-app bet details..." aria-label={`Off-app bet details for ${row.teamName}, Week ${row.week}`}/> : null}
               </>}</td>
               <td><select className="commissioner-result-select" value={draft.result} disabled={busy} aria-label={`Result for ${row.teamName}, Week ${row.week}`}
-                onChange={event => edit(key, { result: event.target.value as BetResult, source: !row.hasWebsitePick && event.target.value !== "pending" ? "outside" : draft.source })}>
-                  {results.map(value => <option value={value} key={value}>{value.charAt(0).toUpperCase() + value.slice(1)}</option>)}
+                onChange={event => {
+                  const result = event.target.value as BetResult;
+                  if (result === "no_bet") edit(key, { result, source: "none", details: "" });
+                  else edit(key, { result, source: !row.hasWebsitePick && result !== "pending" ? "outside" : draft.source });
+                }}>
+                  {results.filter(value => !row.hasWebsitePick || value !== "no_bet").map(value =>
+                    <option value={value} key={value}>{value === "no_bet" ? "No Bet Placed" : value.charAt(0).toUpperCase() + value.slice(1)}</option>)}
                 </select></td>
               <td>{row.hasWebsitePick ? <span className="admin-secondary">Website pick</span> : <button type="button" disabled={busy} className={`commissioner-flag ${draft.source === "outside" ? "is-on" : ""}`}
-                aria-pressed={draft.source === "outside"} onClick={() => edit(key, draft.source === "outside" ? { source: "none", details: "", result: "pending" } : { source: "outside" })}>
+                aria-pressed={draft.source === "outside"} onClick={() => edit(key, draft.source === "outside" ? { source: "none", details: "", result: "pending" } : { source: "outside", result: noBet ? "pending" : draft.result })}>
                   {draft.source === "outside" ? "✓ Off-app" : "+ Mark off-app"}
                 </button>}</td>
               <td><span className="commissioner-member-note">{row.hasWebsitePick ? (pick?.payment_confirmed_at ? "✓ Claims paid" : "Not confirmed") : "—"}</span></td>
-              <td><button type="button" disabled={busy} className={`commissioner-flag ${draft.paid ? "is-on" : ""}`}
+              <td>{noBet ? <span className="commissioner-payment-na" aria-label="No Venmo payment needed">Not applicable<br/>No $1 owed</span> : <button type="button" disabled={busy} className={`commissioner-flag ${draft.paid ? "is-on" : ""}`}
                 aria-pressed={draft.paid} onClick={() => edit(key, { paid: !draft.paid })}>
                   {draft.paid ? "✓ Received" : "Mark $1 received"}
-                </button></td>
+                </button>}</td>
               <td><div className="commissioner-save-cell">
                 <span className={`commissioner-row-status ${status === "saved" && !dirty ? "is-saved" : dirty ? "is-dirty" : status === "error" ? "is-error" : ""}`}>
                   {status === "error" ? "Could not save" : dirty ? "● Unsaved" : status === "saved" ? "✓ Saved · edit to update" : "Up to date"}

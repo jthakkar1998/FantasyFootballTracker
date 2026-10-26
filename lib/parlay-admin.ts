@@ -11,7 +11,8 @@ export interface ParlayWeeklyTeamTracking {
   team_id: number;
   submitted_outside_app: boolean;
   outside_bet_details: string | null;
-  outside_result_status: "pending" | "hit" | "miss" | "push" | "void";
+  // "no_bet" is an explicit absence of a wager (not a pending/missed wager).
+  outside_result_status: "pending" | "hit" | "miss" | "push" | "void" | "no_bet";
   outside_graded_at: string | null;
   payment_verified_at: string | null;
   updated_at: string;

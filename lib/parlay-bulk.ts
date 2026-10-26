@@ -1,6 +1,6 @@
 import type { ParlayCommissionerRow } from "./parlay-admin";
 
-export type BetResult = "pending" | "hit" | "miss" | "push" | "void";
+export type BetResult = "pending" | "hit" | "miss" | "push" | "void" | "no_bet";
 export type Source = "website" | "outside" | "none";
 export type EditableBet = {
   source: Source;
@@ -20,13 +20,25 @@ export type BetUpdate = {
 };
 
 export const rowKey = (season: number, week: number, teamId: number): string => `${season}:${week}:${teamId}`;
-export const results: readonly BetResult[] = ["pending", "hit", "miss", "push", "void"];
+export const results: readonly BetResult[] = ["pending", "hit", "miss", "push", "void", "no_bet"];
+
+// Reuse for future leaderboard calculations: only settled wins/losses are graded bets.
+// Pending, push, void, and explicit no-bet rows never dilute hit rate.
+export function isHitRateEligible(result: BetResult): boolean {
+  return result === "hit" || result === "miss";
+}
+
+export function needsPaymentFollowUp(row: ParlayCommissionerRow, entry: EditableBet): boolean {
+  return entry.result !== "no_bet" && (row.hasWebsitePick || entry.source === "outside") && !entry.paid;
+}
 
 export function initialBet(row: ParlayCommissionerRow): EditableBet {
   return {
     source: row.hasWebsitePick ? "website" : row.hasOutsidePick ? "outside" : "none",
     details: row.hasOutsidePick ? (row.tracking?.outside_bet_details ?? "") : "",
-    result: row.hasWebsitePick ? (row.pick?.result_status ?? "pending") : row.hasOutsidePick ? (row.tracking?.outside_result_status ?? "pending") : "pending",
+    result: row.hasWebsitePick ? (row.pick?.result_status ?? "pending")
+      : (row.hasOutsidePick || row.tracking?.outside_result_status === "no_bet")
+        ? (row.tracking?.outside_result_status ?? "pending") : "pending",
     paid: Boolean(row.paymentVerifiedAt)
   };
 }
@@ -35,6 +47,7 @@ export function diffBet(row: ParlayCommissionerRow, before: EditableBet, after: 
   const changed: BetUpdate = { season: row.season, week: row.week, teamId: row.teamId };
   if (row.hasWebsitePick) {
     if (after.source !== "website") throw new Error("Website picks cannot be changed into off-app picks.");
+    if (after.result === "no_bet") throw new Error("An existing website pick cannot be marked No Bet Placed.");
     if (after.result !== before.result) {
       if (!row.pick?.id) throw new Error("Missing website pick ID.");
       changed.websitePickId = row.pick.id;
@@ -42,10 +55,20 @@ export function diffBet(row: ParlayCommissionerRow, before: EditableBet, after: 
     }
   } else {
     if (after.source === "website") throw new Error("Cannot create a website pick in commissioner tracking.");
+    if (after.result === "no_bet" && (after.source !== "none" || after.details.trim())) {
+      throw new Error("No Bet Placed must have source=none and no bet details.");
+    }
     if (after.source !== before.source) changed.outside = after.source === "outside";
     // A source toggle also clears stale hidden values from older records.
     if (after.details !== before.details || after.source !== before.source) changed.details = after.details;
     if (after.result !== before.result || after.source !== before.source) changed.result = after.result;
+    // Explicitly reset any old off-app flag/details when marking a row No Bet Placed.
+    // This changes only the selected row; payment evidence remains intact.
+    if (after.result === "no_bet" && before.result !== "no_bet") {
+      changed.outside = false;
+      changed.details = "";
+      changed.result = "no_bet";
+    }
   }
   if (after.paid !== before.paid) changed.paymentReceived = after.paid;
   return Object.keys(changed).length > 3 ? changed : null;
@@ -63,7 +86,7 @@ export function exportBetsCsv(rows: ParlayCommissionerRow[], drafts: Record<stri
     const entry = drafts[rowKey(row.season, row.week, row.teamId)] ?? initialBet(row);
     return [String(row.season), String(row.week), String(row.teamId), row.teamName,
       entry.source, row.hasWebsitePick ? "" : entry.details,
-      entry.result, entry.paid ? "yes" : "no"].map(csvField).join(",");
+      entry.result, entry.result === "no_bet" ? "n/a" : entry.paid ? "yes" : "no"].map(csvField).join(",");
   })].join("\r\n") + "\r\n";
 }
 
@@ -127,19 +150,26 @@ export function importBetsCsv(csv: string, rows: ParlayCommissionerRow[], curren
     const result = resultRaw.trim().toLowerCase();
     const paid = paidRaw.trim().toLowerCase();
     if (!(["website", "outside", "none"] as string[]).includes(source)) throw new Error(`CSV row ${line}: source must be website, outside, or none.`);
-    if (!results.includes(result as BetResult)) throw new Error(`CSV row ${line}: result must be pending, hit, miss, push, or void.`);
-    if (paid !== "yes" && paid !== "no") throw new Error(`CSV row ${line}: payment_received must be yes or no.`);
+    if (!results.includes(result as BetResult)) throw new Error(`CSV row ${line}: result must be pending, hit, miss, push, void, or no_bet.`);
+    if (paid !== "yes" && paid !== "no" && !(paid === "n/a" && result === "no_bet")) {
+      throw new Error(`CSV row ${line}: payment_received must be yes/no (or n/a for no_bet).`);
+    }
     if (detailsRaw.length > 400) throw new Error(`CSV row ${line}: bet_details exceeds 400 characters.`);
     if (row.hasWebsitePick && source !== "website") throw new Error(`CSV row ${line}: A website-submitted pick must retain source=website.`);
+    if (row.hasWebsitePick && result === "no_bet") throw new Error(`CSV row ${line}: An existing website pick cannot have result=no_bet.`);
     if (!row.hasWebsitePick && source === "website") throw new Error(`CSV row ${line}: No website pick exists; choose outside or none.`);
-    if (source === "none" && (detailsRaw.trim() || result !== "pending")) {
-      throw new Error(`CSV row ${line}: Enter source=outside to record bet details or a result.`);
+    if (result === "no_bet" && (source !== "none" || detailsRaw.trim())) {
+      throw new Error(`CSV row ${line}: result=no_bet requires source=none and blank bet_details.`);
+    }
+    if (source === "none" && (detailsRaw.trim() || (result !== "pending" && result !== "no_bet"))) {
+      throw new Error(`CSV row ${line}: Enter source=outside to record bet details or a graded result.`);
     }
     output[key] = {
       source: source as Source,
       details: row.hasWebsitePick ? (current[key]?.details ?? "") : detailsRaw.trim(),
       result: result as BetResult,
-      paid: paid === "yes"
+      // "n/a" means keep any prior verification unchanged, not overwrite it.
+      paid: paid === "n/a" ? (current[key]?.paid ?? false) : paid === "yes"
     };
   }
   return output;
