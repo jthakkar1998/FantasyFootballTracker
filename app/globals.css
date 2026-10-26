@@ -361,12 +361,18 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .commissioner-bulk-footer { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
 @media (max-width: 750px) { .commissioner-bulk-toolbar, .commissioner-bulk-filters, .commissioner-bulk-actions { width: 100%; } .commissioner-bulk-actions .button { flex: 1; } }
 /* Result comes immediately after Bet so the selection is always visible first. */
-.commissioner-bulk-table { min-width: 1100px; }
+.commissioner-bulk-table { min-width: 1180px; }
 .commissioner-bulk-table col.week-col { width: 60px; }
 .commissioner-bulk-table col.team-col { width: 128px; }
 .commissioner-bulk-table col.bet-col { width: 250px; }
-.commissioner-bulk-table col.result-col { width: 130px; }
+.commissioner-bulk-table col.result-col { width: 170px; }
 .commissioner-bulk-table col.source-col { width: 124px; }
 .commissioner-bulk-table col.member-col { width: 100px; }
 .commissioner-bulk-table col.payment-col { width: 140px; }
 .commissioner-bulk-table col.save-col { width: 168px; }
+
+/* No wager is separate from a missed bet; payments are inapplicable, not unpaid. */
+.commissioner-row-no-bet { background: rgba(134,148,166,.035); }
+.commissioner-row-no-bet .commissioner-no-bet-label { color: #aab5c4; font-size: 12px; font-weight: 750; }
+.commissioner-payment-na { display: inline-block; padding: 9px 10px; color: #8b95a5; background: rgba(134,148,166,.09); border: 1px solid rgba(134,148,166,.20); border-radius: 9px; font-size: 11px; line-height: 1.5; font-weight: 650; }
+.commissioner-result-select:has(option:checked[value="no_bet"]) { border-color: rgba(134,148,166,.35); color: #b7c0ce; }

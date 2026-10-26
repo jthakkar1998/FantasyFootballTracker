@@ -31,6 +31,10 @@ function validate(input: unknown): BetUpdate {
     throw new Error("Cannot change the source or details of a website pick.");
   }
   if (row.websitePickId && row.result === undefined) throw new Error("Missing website result.");
+  if (row.websitePickId && row.result === "no_bet") throw new Error("Website picks cannot be marked No Bet Placed.");
+  if (row.result === "no_bet" && (row.outside !== false || row.details !== "")) {
+    throw new Error("No Bet Placed requires outside=false and empty bet details.");
+  }
   const hasChange = ["outside", "details", "result", "paymentReceived"].some(key => row[key] !== undefined);
   if (!hasChange) throw new Error("Nothing to save.");
   return row as BetUpdate;
