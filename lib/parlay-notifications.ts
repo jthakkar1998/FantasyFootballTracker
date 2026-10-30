@@ -44,12 +44,20 @@ export async function runParlayReminders(nowIso = new Date().toISOString()) {
   if (!reminder || Date.now() >= new Date(context.deadlineAt).getTime()) {
     return { slot: null, sent: 0, skipped: 0, failed: 0, reason: "Not in a reminder window or past the deadline." };
   }
-  const [picks, subscriptionResponse] = await Promise.all([
+  const [picks, outsideResponse, subscriptionResponse] = await Promise.all([
     listParlaySubmissions(context.season, context.week),
+    getDb().from("parlay_weekly_team_tracking").select("team_id")
+      .eq("season", context.season).eq("week", context.week)
+      .eq("submitted_outside_app", true),
     getDb().from("parlay_push_subscriptions").select("id,team_id,endpoint,subscription")
   ]);
+  if (outsideResponse.error) throw new Error(`Could not check off-app picks: ${outsideResponse.error.message}`);
   if (subscriptionResponse.error) throw new Error(`Could not fetch push registrations: ${subscriptionResponse.error.message}`);
-  const alreadySubmitted = new Set(picks.map(pick => pick.team_id));
+  // If the commissioner has already recorded a texted-in pick, no reminder is needed.
+  const alreadySubmitted = new Set([
+    ...picks.map(pick => pick.team_id),
+    ...(outsideResponse.data ?? []).map(row => Number(row.team_id))
+  ]);
   const missingTeams = new Map(context.teams.filter(team => !alreadySubmitted.has(team.teamId)).map(team => [team.teamId, team.teamName]));
   // Concurrent sends bound the execution time so a slow push provider does not
   // block a small league's entire reminder run on Vercel.
