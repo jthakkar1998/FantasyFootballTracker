@@ -68,6 +68,9 @@ export async function runParlayReminders(nowIso = new Date().toISOString(), opti
       .filter(subscription => missingTeams.has(subscription.team_id)).length,
     attempted: 0, retried: 0, sent: 0, skipped: 0, failed: 0
   };
+  if (!reminder) {
+  throw new Error("Cannot send reminders without an active reminder window.");
+  }
   // An atomic Postgres claim prevents duplicate sends across overlapping cron runs.
   // Failed pushes can be retried (at most 3 total attempts); successful pushes
   // never repeat in the same week/slot. See the Supabase Cron migration.
