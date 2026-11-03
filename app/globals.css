@@ -376,3 +376,12 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .commissioner-row-no-bet .commissioner-no-bet-label { color: #aab5c4; font-size: 12px; font-weight: 750; }
 .commissioner-payment-na { display: inline-block; padding: 9px 10px; color: #8b95a5; background: rgba(134,148,166,.09); border: 1px solid rgba(134,148,166,.20); border-radius: 9px; font-size: 11px; line-height: 1.5; font-weight: 650; }
 .commissioner-result-select:has(option:checked[value="no_bet"]) { border-color: rgba(134,148,166,.35); color: #b7c0ce; }
+
+/* Commissioner reminder-run diagnostics */
+.reminder-diagnostics { padding: 18px 20px; margin: 18px 0 24px; }
+.reminder-diagnostics h3 { margin: 0 0 8px; font-size: 18px; }
+.reminder-diagnostics .table-wrap { margin: 12px 0; }
+.reminder-history-table { min-width: 780px; }
+.reminder-history-table th, .reminder-history-table td { padding: 10px 12px; font-size: 12px; }
+.reminder-history-table .reminder-success { color: var(--success); }
+.reminder-history-table .reminder-error { color: var(--danger); }

@@ -4,6 +4,7 @@ import { listParlayWeeklyTeamTracking } from "@/lib/parlay-tracking-db";
 import { makeParlayCommissionerRows } from "@/lib/parlay-admin";
 import { fetchLeagueSummary, teamDisplayName } from "@/lib/espn";
 import { notificationRegistrationCounts } from "@/lib/parlay-notifications";
+import { recentParlayReminderRuns, type ReminderRun } from "@/lib/parlay-reminder-diagnostics";
 import { getCurrentParlayContext } from "@/lib/parlay";
 import { redirect } from "next/navigation";
 import { isAdmin } from "@/lib/auth";
@@ -22,6 +23,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const tracking = databaseConfigured() ? await listParlayWeeklyTeamTracking(leagueConfig.season) : [];
   // Device totals only; subscription endpoint URLs and keys never appear in the HTML.
   const deviceCounts = databaseConfigured() ? await notificationRegistrationCounts() : new Map<number, number>();
+  let reminderRuns: ReminderRun[] = [];
+  let diagnosticsUnavailable = false;
+  if (databaseConfigured()) {
+    try { reminderRuns = await recentParlayReminderRuns(); }
+    catch { diagnosticsUnavailable = true; }
+  }
   const activePicks = parlayHistory.filter(pick => !pick.withdrawn_at);
   let thisWeek: { week: number; teams: { teamId: number; teamName: string }[] } | null = null;
   let roster: { teamId: number; teamName: string }[] = [];
@@ -96,6 +103,26 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             })}
           </div></div>
         ) : null}
+        <div className="card reminder-diagnostics">
+          <h3>Automated reminder diagnostics</h3>
+          <p className="parlay-muted">Supabase Cron checks during Thursday–Saturday 8 PM, Sunday 9 AM, and Sunday 11:30 AM Central windows. Each slot is delivered once per eligible device, with up to three attempts for failures.</p>
+          {diagnosticsUnavailable ? <p className="notice error">Reminder diagnostics aren't available yet. Check that the Supabase Cron migration was applied.</p> : reminderRuns.length === 0 ? <p className="parlay-muted">No reminder API runs recorded yet. After enabling Supabase Cron, scheduled runs will appear here.</p> : (
+            <div className="table-wrap">
+              <table className="reminder-history-table">
+                <thead><tr><th>Run (Central)</th><th>Slot</th><th>Status</th><th>Missing</th><th>Devices eligible</th><th>Sent</th><th>Retried</th><th>Failed</th></tr></thead>
+                <tbody>{reminderRuns.map(run => (
+                  <tr key={run.id}>
+                    <td>{new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(run.started_at))}</td>
+                    <td>{run.slot ?? "—"}</td>
+                    <td title={run.error_message ?? undefined} className={run.status === "success" ? "reminder-success" : run.status === "partial" || run.status === "error" ? "reminder-error" : ""}>{run.status.replaceAll("_", " ")}{run.error_message ? `: ${run.error_message}` : ""}</td>
+                    <td>{run.missing_teams}</td><td>{run.eligible_devices}</td><td>{run.sent}</td><td>{run.retried}</td><td>{run.failed}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          <small className="parlay-muted">A successful cron request is not proof of phone delivery; “Sent” means the push provider accepted it. Check Supabase Integrations → Cron → History if no API runs appear.</small>
+        </div>
         <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season} />
       </section>
 
