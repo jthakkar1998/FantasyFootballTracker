@@ -12,6 +12,9 @@ import { databaseConfigured, listObligations } from "@/lib/supabase";
 import { obligationDueLabel } from "@/lib/format";
 import { StatusPill } from "@/components/StatusPill";
 import { CommissionerParlayManager } from "@/components/CommissionerParlayManager";
+import { ParlaySnapshotReport } from "@/components/ParlaySnapshotReport";
+import { listSnapshots, listSnapshotRuns, type SnapshotRun } from "@/lib/parlay-snapshot-db";
+import type { SnapshotRecord, SnapshotPick } from "@/lib/parlay-snapshot-core";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +24,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const obligations = databaseConfigured() ? await listObligations() : [];
   const parlayHistory = databaseConfigured() ? await listParlayHistory() : [];
   const tracking = databaseConfigured() ? await listParlayWeeklyTeamTracking(leagueConfig.season) : [];
+  let snapshots: SnapshotRecord[] = [];
+  let snapshotRuns: SnapshotRun[] = [];
+  let snapshotsUnavailable = false;
+  if (databaseConfigured()) {
+    try {
+      [snapshots, snapshotRuns] = await Promise.all([
+        listSnapshots(leagueConfig.season), listSnapshotRuns(leagueConfig.season)
+      ]);
+    } catch { snapshotsUnavailable = true; }
+  }
   // Device totals only; subscription endpoint URLs and keys never appear in the HTML.
   const deviceCounts = databaseConfigured() ? await notificationRegistrationCounts() : new Map<number, number>();
   let reminderRuns: ReminderRun[] = [];
@@ -123,6 +136,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           )}
           <small className="parlay-muted">A successful cron request is not proof of phone delivery; “Sent” means the push provider accepted it. Check Supabase Integrations → Cron → History if no API runs appear.</small>
         </div>
+        {snapshotsUnavailable ? <div className="notice error">FanDuel snapshots are unavailable. The Phase 1 database migration may not be installed yet.</div> :
+          <ParlaySnapshotReport season={leagueConfig.season} currentWeek={currentWeek}
+            picks={activePicks.filter(pick => pick.season === leagueConfig.season) as SnapshotPick[]}
+            snapshots={snapshots} runs={snapshotRuns} />}
         <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season} />
       </section>
 
