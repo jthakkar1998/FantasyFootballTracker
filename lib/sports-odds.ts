@@ -375,3 +375,43 @@ export async function getFanDuelProps(args: {
     props
   };
 }
+
+/** Direct, uncached, FanDuel-only event/market lookup for the Sunday snapshots.
+ * Never use the website's 10-minute odds cache to represent an 11:56 quote.
+ * Multiple selected markets within the same NFL event cost one returned event.
+ */
+export async function fetchSnapshotFanDuelMarkets(selections: { eventId: string; oddId: string }[]): Promise<import("./parlay-snapshot-core").SnapshotOddsEvent[]> {
+  const eventIds = [...new Set(selections.map(item => item.eventId))].filter(Boolean);
+  const oddIds = [...new Set(selections.map(item => item.oddId))].filter(Boolean);
+  if (!eventIds.length || !oddIds.length) return [];
+  // A league has ten teams; limit accidental broad lookups on a free API key.
+  if (eventIds.length > 20 || oddIds.length > 30) throw new Error("Snapshot selection exceeds the safe batch size.");
+  const params = new URLSearchParams({
+    [eventIds.length === 1 ? "eventID" : "eventIDs"]: eventIds.join(","),
+    oddID: oddIds.join(","),
+    bookmakerID: BOOKMAKER,
+    limit: String(eventIds.length)
+  });
+  return requestApi<import("./parlay-snapshot-core").SnapshotOddsEvent>("events", params, 20000, "Sunday FanDuel snapshots");
+}
+
+/** Reads actual allowance for the configured key; does not hard-code an Amateur quota. */
+export async function fetchSportsOddsUsage(): Promise<{ used: number; limit: number; percent: number; warning: boolean } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch(`${API_BASE}/account/usage`, {
+      headers: { Accept: "application/json", "x-api-key": apiKey() }, cache: "no-store", signal: controller.signal
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const month = body?.data?.rateLimits?.["per-month"];
+    if (!month) return null;
+    const used = Number(month["current-entities"]);
+    const limit = Number(month["max-entities"]);
+    if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) return null;
+    const percent = used / limit * 100;
+    return { used, limit, percent, warning: percent >= 75 };
+  } catch { return null; }
+  finally { clearTimeout(timer); }
+}

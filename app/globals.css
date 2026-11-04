@@ -385,3 +385,33 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .reminder-history-table th, .reminder-history-table td { padding: 10px 12px; font-size: 12px; }
 .reminder-history-table .reminder-success { color: var(--success); }
 .reminder-history-table .reminder-error { color: var(--danger); }
+
+/* Read-only Commissioner FanDuel Sunday snapshots (Phase 1). */
+.snapshot-report { padding: 20px; margin: 18px 0; min-width: 0; }
+.snapshot-report-header { display: flex; justify-content: space-between; align-items: start; gap: 14px; flex-wrap: wrap; }
+.snapshot-report-header h3 { font-size: 20px; margin: 0 0 6px; }
+.snapshot-report-header p { font-size: 12px; line-height: 1.5; margin: 0; }
+.snapshot-week-select { margin: 0; min-width: 135px; font-size: 12px; }
+.snapshot-week-select select { width: 100%; color: var(--text); background: #101722; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.snapshot-summary { display: flex; gap: 9px; flex-wrap: wrap; margin: 16px 0; }
+.snapshot-summary span { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; color: var(--muted); font-size: 12px; }
+.snapshot-summary strong { color: var(--text); }
+.snapshot-table { min-width: 830px; table-layout: fixed; }
+.snapshot-table th, .snapshot-table td { padding: 13px 10px; font-size: 12px; overflow-wrap: anywhere; vertical-align: top; }
+.snapshot-table td strong { display: block; font-weight: 750; }
+.snapshot-table td small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.snapshot-table th:first-child { width: 17%; }
+.snapshot-table th:nth-child(2) { width: 25%; }
+.snapshot-table th:nth-child(3), .snapshot-table th:nth-child(4) { width: 17%; }
+.snapshot-table th:nth-child(5) { width: 24%; }
+.snapshot-muted { color: var(--muted); }
+.snapshot-tag { display: inline-block; font-size: 10px; font-weight: 750; padding: 3px 7px; border-radius: 7px; margin: 0 0 6px; border: 1px solid var(--line); }
+.snapshot-tag.primary { color: var(--success); border-color: rgba(88,214,141,.3); background: rgba(88,214,141,.08); }
+.snapshot-tag.backup { color: var(--warning); border-color: rgba(244,201,93,.3); background: rgba(244,201,93,.08); }
+.snapshot-tag.missing { color: var(--muted); }
+.snapshot-run-details { margin-top: 14px; }
+.snapshot-run-details summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 750; }
+.snapshot-run-details table { min-width: 700px; }
+.snapshot-run-details td { font-size: 11px; overflow-wrap: anywhere; }
+.snapshot-footnote { font-size: 11px; line-height: 1.5; margin-bottom: 0; }
+@media (max-width: 720px) { .snapshot-report { padding: 14px; } .snapshot-week-select { width: 100%; } }
