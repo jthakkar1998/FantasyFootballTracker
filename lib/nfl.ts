@@ -22,7 +22,7 @@ function localParts(iso: string): { date: string; weekday: string } {
   return { date, weekday };
 }
 
-async function fetchNflWeekEvents(week: number): Promise<NflEvent[]> {
+export async function fetchNflWeekEvents(week: number): Promise<NflEvent[]> {
   const params = new URLSearchParams({
     dates: String(leagueConfig.season),
     seasontype: "2",

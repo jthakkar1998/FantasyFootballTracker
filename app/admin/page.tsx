@@ -13,6 +13,8 @@ import { obligationDueLabel } from "@/lib/format";
 import { StatusPill } from "@/components/StatusPill";
 import { CommissionerParlayManager } from "@/components/CommissionerParlayManager";
 import { ParlaySnapshotReport } from "@/components/ParlaySnapshotReport";
+import { ParlayGradingReport } from "@/components/ParlayGradingReport";
+import { ParlayLiveHitReport } from "@/components/ParlayLiveHitReport";
 import { listSnapshots, listSnapshotRuns, type SnapshotRun } from "@/lib/parlay-snapshot-db";
 import type { SnapshotRecord, SnapshotPick } from "@/lib/parlay-snapshot-core";
 
@@ -140,6 +142,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <ParlaySnapshotReport season={leagueConfig.season} currentWeek={currentWeek}
             picks={activePicks.filter(pick => pick.season === leagueConfig.season) as SnapshotPick[]}
             snapshots={snapshots} runs={snapshotRuns} />}
+        {!snapshotsUnavailable ? <ParlayLiveHitReport enabled={process.env.PARLAY_LIVE_HITS_ENABLED === "true"} /> : null}
+        {!snapshotsUnavailable ? <ParlayGradingReport currentWeek={currentWeek} snapshotWeeks={[...new Set(snapshots.map(record => record.week))]} writesEnabled={process.env.PARLAY_AUTO_GRADING_ENABLED === "true"} /> : null}
         <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season} />
       </section>
 
