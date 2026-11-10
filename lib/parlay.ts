@@ -1,6 +1,6 @@
 import { leagueConfig, slotLabel } from "./config";
 import { fetchLeagueSummary, fetchWeekBoxscore, teamDisplayName } from "./espn";
-import { fetchNflWeekDeadline } from "./nfl";
+import { parlaySundayForWeek } from "./nfl";
 import { parlayDeadlineIso } from "./parlay-time";
 import type { EspnMatchupSide, EspnRosterEntry, EspnTeam } from "./types";
 import type { EligibleParlayPlayer, ParlayTeamContext, ParlayWeekContext } from "./parlay-types";
@@ -60,8 +60,8 @@ export async function getCurrentParlayContext(): Promise<ParlayWeekContext> {
   if (!Number.isFinite(week) || week < 1) throw new Error("Could not determine the current ESPN fantasy week.");
 
   const boxscore = await fetchWeekBoxscore(week);
-  const deadlines = await fetchNflWeekDeadline(week);
-  const deadlineAt = parlayDeadlineIso(deadlines.sundayDate);
+  const sundayDate = await parlaySundayForWeek(week);
+  const deadlineAt = parlayDeadlineIso(sundayDate);
   const teams = summary.teams ?? [];
   const teamsById = teamMap(teams);
   const weekMatchups = (boxscore.schedule ?? summary.schedule ?? []).filter((matchup) => Number(matchup.matchupPeriodId) === week);
@@ -91,7 +91,7 @@ export async function getCurrentParlayContext(): Promise<ParlayWeekContext> {
   return {
     season: leagueConfig.season,
     week,
-    sundayDate: deadlines.sundayDate,
+    sundayDate,
     deadlineAt,
     locked: Date.now() >= new Date(deadlineAt).getTime(),
     teams: contexts.sort((a, b) => a.teamName.localeCompare(b.teamName))
