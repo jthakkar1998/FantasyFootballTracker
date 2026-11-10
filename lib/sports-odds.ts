@@ -1,6 +1,6 @@
 import { leagueConfig } from "./config";
 import { getCachedOdds, setCachedOdds } from "./parlay-db";
-import { fetchNflSundayGameForProTeam } from "./nfl";
+import { findUniqueSundayOddsGame, nflOddsGameStart, oddsPlayerTeamVerified } from "./nfl-team-game";
 import type { EligibleParlayPlayer, ParlayPropOption, ParlayPropsResponse } from "./parlay-types";
 
 const API_BASE = "https://api.sportsgameodds.com/v2";
@@ -74,7 +74,7 @@ export function sportsOddsConfigured(): boolean {
 }
 
 function eventStart(event: SportsOddsEvent): string | null {
-  return event.status?.startsAt ?? event.startsAt ?? event.startTime ?? null;
+  return nflOddsGameStart(event);
 }
 
 function teamName(team: SportsOddsTeam | undefined): string {
@@ -92,15 +92,6 @@ export function normalizePlayerName(value: string): string {
     .normalize("NFKD")
     .replace(/[.'’-]/g, "")
     .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function normalizeTeamName(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
@@ -130,14 +121,8 @@ async function requestApi<T>(path: "events" | "players", params: URLSearchParams
   }
 }
 
-function eventMatchesNflGame(event: SportsOddsEvent, homeName: string, awayName: string): boolean {
-  const eventTeams = [normalizeTeamName(teamName(event.teams?.home)), normalizeTeamName(teamName(event.teams?.away))].sort();
-  const targetTeams = [normalizeTeamName(homeName), normalizeTeamName(awayName)].sort();
-  return eventTeams[0] === targetTeams[0] && eventTeams[1] === targetTeams[1];
-}
-
-async function fetchLightweightNflSchedule(week: number): Promise<{ events: SportsOddsEvent[]; fetchedAt: string }> {
-  const cacheKey = `sgo:nfl:schedule:${leagueConfig.season}:w${week}`;
+async function fetchLightweightNflSchedule(week: number, sundayDate: string): Promise<{ events: SportsOddsEvent[]; fetchedAt: string }> {
+  const cacheKey = `sgo:nfl:sunday-slate:${leagueConfig.season}:w${week}:${sundayDate}`;
   const cached = await getCachedOdds<SportsOddsEvent[]>(cacheKey);
   if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
     return { events: cached.payload, fetchedAt: cached.fetchedAt };
@@ -146,16 +131,32 @@ async function fetchLightweightNflSchedule(week: number): Promise<{ events: Spor
   // Request only one ordinary game market so the response stays small. This is
   // used only to resolve SportsGameOdds eventIDs; player props are fetched later
   // from the exact event.
+  const nextDay = new Date(Date.parse(`${sundayDate}T00:00:00Z`) + 2 * 86400000).toISOString().slice(0, 10);
   const params = new URLSearchParams({
     leagueID: "NFL",
     started: "false",
+    startsAfter: `${sundayDate}T00:00:00Z`,
+    startsBefore: `${nextDay}T00:00:00Z`,
     oddID: "points-home-game-ml-home",
     includeOpposingOdds: "true",
     limit: "25"
   });
-  const events = await requestApi<SportsOddsEvent>("events", params, 8000, "SportsGameOdds NFL event lookup");
+  let events: SportsOddsEvent[];
+  try {
+    events = await requestApi<SportsOddsEvent>("events", params, 8000, "SportsGameOdds NFL event lookup");
+    if (!events.length) throw new Error("SportsGameOdds returned no upcoming NFL Sunday events.");
+  } catch (error) {
+    // A brief upstream outage must not interrupt props already known for the
+    // same Sunday. Subsequent game/player validation still fails closed.
+    if (cached?.payload?.length && Date.now() - Date.parse(cached.fetchedAt) < 6 * 60 * 60_000) {
+      console.warn(`[sgo-schedule] Serving recent Sunday slate cache for week ${week} after request failed:`, error);
+      return { events: cached.payload, fetchedAt: cached.fetchedAt };
+    }
+    throw error;
+  }
   const fetchedAt = new Date().toISOString();
-  await setCachedOdds(cacheKey, events, fetchedAt);
+  try { await setCachedOdds(cacheKey, events, fetchedAt); }
+  catch (error) { console.warn(`[sgo-schedule] Could not persist Sunday slate cache for week ${week}:`, error); }
   return { events, fetchedAt };
 }
 
@@ -343,21 +344,24 @@ export async function getFanDuelProps(args: {
 }): Promise<ParlayPropsResponse> {
   if (!args.player.proTeamId) throw new Error(`ESPN did not provide an NFL team for ${args.player.name}.`);
 
-  const nflGame = await fetchNflSundayGameForProTeam({
-    week: args.week,
-    sundayDate: args.sundayDate,
-    proTeamId: args.player.proTeamId
-  });
-
-  const { events: schedule } = await fetchLightweightNflSchedule(args.week);
-  const scheduleEvent = schedule.find((event) => eventMatchesNflGame(event, nflGame.homeTeamName, nflGame.awayTeamName));
+  // No ESPN NFL schedule dependency. Resolve the already verified ESPN fantasy
+  // proTeamId against a unique SportsGameOdds Sunday game and exact player.
+  const { events: schedule } = await fetchLightweightNflSchedule(args.week, args.sundayDate);
+  const scheduleEvent = findUniqueSundayOddsGame(schedule, args.player.proTeamId, args.sundayDate);
   if (!scheduleEvent?.eventID) {
-    throw new Error(`Could not match ${args.player.name}'s Sunday game to SportsGameOdds.`);
+    throw new Error(`Could not uniquely verify ${args.player.name}'s Sunday NFL game on SportsGameOdds.`);
   }
 
   const playerMatch = await resolvePlayerForEvent(scheduleEvent, args.player.name);
+  if (!oddsPlayerTeamVerified(scheduleEvent, args.player.proTeamId, playerMatch.player.teamID)) {
+    throw new Error(`SportsGameOdds listed ${args.player.name} on a different NFL team; refusing to offer a prop.`);
+  }
   const { event, fetchedAt } = await fetchExactPlayerEvent(scheduleEvent.eventID, playerMatch.playerId);
-  const startsAt = eventStart(event) ?? nflGame.startsAt;
+  const startsAt = eventStart(event) ?? eventStart(scheduleEvent);
+  if (!startsAt || !Number.isFinite(Date.parse(startsAt))) throw new Error("Sportsbook NFL kickoff time is unavailable.");
+  if (Math.abs(Date.parse(startsAt) - Date.parse(eventStart(scheduleEvent)!)) > 60 * 60_000) {
+    throw new Error("Sportsbook game kickoff changed unexpectedly; please retry later.");
+  }
   if (new Date(startsAt).getTime() <= Date.now()) {
     throw new Error(`That player's NFL game has already started.`);
   }

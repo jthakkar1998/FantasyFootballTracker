@@ -1,51 +1,32 @@
-# Phase 2 Commissioner UI spacing fix
+# ESPN Reliability Preview Build Fix
 
-This is a **four-file fix** intended for the existing feature branch containing
-Phase 2 automatic grading + live hit notifications. You do **not** need to
-reinstall Phase 2 or rerun Supabase migrations.
+## The issue
+The previous ESPN reliability upgrade replaced `lib/sports-odds.ts` using a version that lacked two exports added by the working Sunday snapshot Phase 1 implementation:
 
-## Files to replace
-- `app/globals.css` — padding, spacing, correct column widths for both tables,
-  horizontal scrolling on small screens, result-pill colors.
-- `components/ParlayGradingReport.tsx` — six-column table widths and red MISS/
-  green HIT/amber PUSH results. No grading calculations changed.
-- `components/ParlayLiveHitReport.tsx` — five-column table widths and clear
-  `no_window`/`empty` messages instead of misleading 0 eligible-pick counters.
-- `lib/parlay-live-hits.ts` — clarify that a successful outside-window preview
-  request does **not** test NFL data or push subscriptions. No live alert
-  decisions or sending behavior changed.
+- `fetchSnapshotFanDuelMarkets` — used by the snapshot Cron job to fetch current FanDuel markets without stale website cache.
+- `fetchSportsOddsUsage` — used by the snapshot Cron job to read the SportsGameOdds monthly usage information.
 
-## Install
-1. Stay on your feature branch, e.g. `feature/parlay-phase2-grading-live-hits`.
-2. Extract this ZIP at the repository root, overwriting the four paths above.
-3. Commit the four changes and let Vercel build a fresh **Preview** deployment.
-4. Reload Commissioner > Phase 2; preview Week 9 grades again. Six columns
-   should display at normal row height. On narrow screens, scroll the table
-   horizontally rather than shrinking the Explanation text into a sliver.
-5. Keep `PARLAY_AUTO_GRADING_ENABLED=false` and
-   `PARLAY_LIVE_HITS_ENABLED=false` until grading and push checks pass.
+Next.js correctly rejected the import from `lib/parlay-snapshots.ts` at build time.
 
-## Interpretation of existing screenshots
-- Week 9 grading preview: 9 website picks, 8 eligible to auto-grade,
-  1 needs manual review. These are PROPOSED results, not applied grades.
-- Two visible spot-checks are arithmetically correct: Over 5.5 receptions
-  with 5 = MISS; Under 90.5 rushing yards with 102 = MISS.
-- Live-hit preview outside Sunday noon to Monday 3:00 AM Central is
-  intentionally inactive. A returned `no_window` result confirms only that
-  the preview endpoint responded, not ESPN access or push delivery.
-- Test live-hit preview Sunday after the Week 10 primary snapshots exist.
-  Keep it read-only; check eligible picks, matching stats and registered
-  devices before enabling pushes.
+## Install (on existing `fix/espn-schedule-reliability` feature branch)
+1. **Do not install the earlier temporary Parlay 403 hotfix.**
+2. Unzip this package.
+3. In GitHub, on your **existing** `fix/espn-schedule-reliability` branch, replace **only** `lib/sports-odds.ts` with the file from this ZIP, preserving its path. Upload `tests/sports-odds-contract.test.ts` if you want the added regression test; it is optional for the app.
+4. Commit and let Vercel rebuild the **Preview** deployment.
+5. Check that the import/export error is gone and the Preview build reports **Ready**. If it reports a different error, inspect the new log before merging.
+6. Confirm the Parlay page loads, props can be requested without a schedule 403, and the read-only Week 9 Commissioner preview still shows the expected results.
+7. Merge into `main` only after the Preview build and read-only checks pass.
 
-## QA done
-- Reviewed original Phase 2 TSX/CSS and identified the inherited widths
-  reserving 100% for 5 columns while grading had 6.
-- WeasyPrint layout check of a representative 6-column table: typical
-  data rows approximately 65–79 px, instead of the screenshot's oversized rows.
-- TypeScript transpilation syntax check for changed TS/TSX passed.
-- Existing 11 core grading/live-hit tests passed via TypeScript transpilation
-  and Node's built-in test runner.
-- CSS parsed with zero top-level errors.
+## What changes (and what doesn't)
+- Retains the reliability update's SportsGameOdds Sunday-game matching and cached schedule behavior.
+- Restores the two Phase 1 exports exactly from the latest Sunday snapshots + Supabase Cron package.
+- Leaves the direct, uncached FanDuel **snapshot** request independent of the ordinary 10-minute odds cache.
+- Does **not** change any SQL, environment variable, Cron job, Sunday cutoff, odds data, grading result, payment state, or push notification setting.
 
-A full Next.js production build and live Supabase/ESPN tests were not run
-here. The actual deployed preview remains the final integration check.
+## Validation
+- TypeScript parser: no syntax errors.
+- Export contract: all five expected public functions exist.
+- Added `tests/sports-odds-contract.test.ts`: passing with Node 22 type stripping; also compatible with the repository's existing `tsx --test` runner.
+- A complete Next.js `npm run build` could not be run in this environment because the local npm dependency installation was incomplete. **The Vercel Preview build is the required final check.**
+
+This fix is intended to replace the `lib/sports-odds.ts` that shipped in `FFBall-ESPN-Schedule-Reliability-CHANGED-FILES.zip`, **not** to replace other files from that earlier upgrade.
