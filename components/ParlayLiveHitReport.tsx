@@ -36,15 +36,16 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
     </div>
     {error ? <p className="notice error" role="alert">{error}</p> : null}
     {report ? <>
+      {report.status === "no_window" || report.status === "empty" ? <p className="grading-preview-status-note" role="status">{report.note}</p> : <>
       <div className="snapshot-summary">
         <span><strong>{report.eligiblePicks}</strong> eligible picks</span>
         <span><strong>{report.currentlyHitting}</strong> currently hitting</span>
-        <span><strong>{report.registeredDevices}</strong> registered devices</span>
+        <span><strong>{report.registeredDevices}</strong> league devices</span>
         <span><strong>0</strong> pushes sent by preview</span>
       </div>
       <p className="parlay-muted">{report.note}</p>
       {report.errors.length ? <p className="notice error">ESPN data issues: {report.errors.join("; ")}</p> : null}
-      {report.rows.length ? <div className="table-wrap"><table className="snapshot-table grading-preview-table">
+      {report.rows.length ? <div className="table-wrap"><table className="snapshot-table grading-preview-table grading-preview-table--live">
         <thead><tr><th>Team / Player</th><th>Sunday FanDuel line</th><th>ESPN stat</th><th>Live status</th><th>Explanation</th></tr></thead>
         <tbody>{report.rows.map((row, index) => <tr key={`${row.team}-${index}`}>
           <td><strong>{row.team}</strong><small>{row.player}</small></td>
@@ -54,7 +55,8 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
           <td><small>{row.reason}</small></td>
         </tr>)}</tbody>
       </table></div> : null}
-      <p className="parlay-muted grading-preview-note">Dry-run never sends a push or edits grades, payments, previous weeks, or delivery history. If outside Sunday noon–Monday 3 AM Central, you will see “no window.”</p>
+      </>}
+      <p className="parlay-muted grading-preview-note">Dry-run never sends a push or edits grades, payments, previous weeks, or delivery history. Outside the live window, the endpoint responds but does not check ESPN or registered devices.</p>
     </> : null}
   </div>;
 }

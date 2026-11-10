@@ -99,7 +99,7 @@ export async function runLiveHitNotifications(args: { dryRun: boolean; nowIso?: 
   }
   const time = chicagoLiveHitWindow(nowIso);
   if (!time.active || !time.sundayDate) {
-    return empty("no_window", "Live checks run Sunday 12 PM–midnight and Monday 12–3 AM Chicago time. Dry-run connection succeeded; nothing sent.");
+    return empty("no_window", "Outside the live monitoring window (Sunday noon–Monday 3 AM Chicago time). The preview endpoint is reachable, but no pick, device, or ESPN stat checks were performed. No pushes were sent.");
   }
   if (!args.dryRun && !webPushConfigured()) throw new Error("VAPID Web Push credentials are not configured.");
 

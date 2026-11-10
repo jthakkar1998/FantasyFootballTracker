@@ -80,14 +80,14 @@ export function ParlayGradingReport({ currentWeek, snapshotWeeks, writesEnabled,
       <p className="parlay-muted">{result.note}</p>
       {result.errors.length ? <p className="notice error">Provider errors: {result.errors.join("; ")}</p> : null}
       <div className="table-wrap">
-        <table className="snapshot-table grading-preview-table">
+        <table className="snapshot-table grading-preview-table grading-preview-table--grades">
           <thead><tr><th>Team / Player</th><th>Prop</th><th>Locked FanDuel line</th><th>Final NFL stat</th><th>Proposed result</th><th>Explanation</th></tr></thead>
           <tbody>{result.decisions.length ? result.decisions.map(row => <tr key={row.submissionId}>
             <td><strong>{row.team}</strong><small>{row.player}</small></td>
             <td>{row.statId.replaceAll("_", " ")}</td>
             <td>{formatLine(row)}<small>{row.source === "primary" ? "11:56 primary" : row.source === "backup" ? "11:45 backup · review only" : "Missing"}</small></td>
             <td>{row.actualValue === null ? "—" : row.actualValue}</td>
-            <td><span className={`grading-grade-pill ${row.status === "review" ? "review" : row.status === "already_graded" ? "settled" : "ready"}`}>
+            <td><span className={`grading-grade-pill ${row.status === "review" ? "review" : row.status === "already_graded" ? "settled" : row.predictedResult ?? "review"}`}>
               {row.status === "ready" ? row.predictedResult?.toUpperCase() ?? "—" : row.status === "already_graded" ? "Manual / settled" : "Review"}
             </span></td>
             <td><small>{row.reason}</small></td>

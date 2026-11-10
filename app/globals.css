@@ -416,21 +416,158 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .snapshot-footnote { font-size: 11px; line-height: 1.5; margin-bottom: 0; }
 @media (max-width: 720px) { .snapshot-report { padding: 14px; } .snapshot-week-select { width: 100%; } }
 
-/* Phase 2: Commissioner-only, read-only grading preview. */
-.grading-preview-card { margin-top: 20px; margin-bottom: 20px; }
-.grading-preview-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
-.grading-preview-controls .button { white-space: nowrap; }
-.grading-preview-table { min-width: 910px; }
-.grading-preview-table td { vertical-align: top; }
-.grading-preview-table td small { display: block; margin-top: 4px; color: var(--muted, #9cacc4); }
-.grading-grade-pill { display: inline-block; border-radius: 5px; padding: 4px 8px; border: 1px solid #2c465d; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.grading-grade-pill.ready { color: #9be9bd; border-color: #36775d; background: #14382a; }
-.grading-grade-pill.review { color: #ffd18b; border-color: #8b622d; background: #3a2816; }
-.grading-grade-pill.settled { color: #afc8e7; border-color: #34516c; background: #1a2a40; }
-.grading-preview-note { margin-top: 12px; font-size: 12px; }
-@media (max-width: 760px) {
-  .grading-preview-controls { width: 100%; }
-  .grading-preview-controls .button { width: 100%; }
+/* Phase 2: Commissioner-only grading and live-hit previews.
+ * Scoped rules avoid changing the working Phase 1 snapshot table. */
+.grading-preview-card {
+  padding: 22px 24px;
+  margin: 20px 0;
+  min-width: 0;
 }
-
-.grading-approval-actions { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.grading-preview-card .snapshot-report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-bottom: 16px;
+}
+.grading-preview-card .snapshot-report-header > div:first-child {
+  flex: 1 1 390px;
+  min-width: 0;
+}
+.grading-preview-card .snapshot-report-header h3 {
+  font-size: 19px;
+  line-height: 1.3;
+  margin: 0 0 8px;
+  letter-spacing: -.02em;
+}
+.grading-preview-card .snapshot-report-header p {
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 750px;
+  margin: 0;
+}
+.grading-preview-card .snapshot-report-header p + p { margin-top: 8px; }
+.grading-preview-card .snapshot-report-header > .button {
+  align-self: flex-start;
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.grading-preview-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.grading-preview-controls .snapshot-week-select {
+  width: 128px;
+  min-width: 128px;
+  margin: 0;
+  gap: 5px;
+}
+.grading-preview-controls .button { white-space: nowrap; }
+.grading-preview-card .snapshot-summary {
+  margin: 8px 0 14px;
+  gap: 8px;
+}
+.grading-preview-card .snapshot-summary span {
+  padding: 7px 10px;
+  line-height: 1.35;
+}
+.grading-preview-card > .parlay-muted { margin: 12px 0; font-size: 12px; }
+.grading-preview-card .table-wrap {
+  max-width: 100%;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow-x: auto;
+}
+/* The general snapshot table reserves all available width for five columns.
+ * The grading table has six columns; each variant needs its own 100% widths.
+ * Without this, Explanation collapses and creates rows hundreds of pixels tall. */
+.grading-preview-table {
+  width: 100%;
+  table-layout: fixed;
+  min-width: 840px;
+}
+.grading-preview-table--grades { min-width: 920px; }
+.grading-preview-table--grades th:nth-child(1) { width: 18%; }
+.grading-preview-table--grades th:nth-child(2) { width: 15%; }
+.grading-preview-table--grades th:nth-child(3) { width: 16%; }
+.grading-preview-table--grades th:nth-child(4) { width: 11%; }
+.grading-preview-table--grades th:nth-child(5) { width: 13%; }
+.grading-preview-table--grades th:nth-child(6) { width: 27%; }
+.grading-preview-table--live { min-width: 800px; }
+.grading-preview-table--live th:nth-child(1) { width: 20%; }
+.grading-preview-table--live th:nth-child(2) { width: 22%; }
+.grading-preview-table--live th:nth-child(3) { width: 13%; }
+.grading-preview-table--live th:nth-child(4) { width: 14%; }
+.grading-preview-table--live th:nth-child(5) { width: 31%; }
+.grading-preview-table th,
+.grading-preview-table td {
+  padding: 13px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.grading-preview-table th { font-size: 10px; line-height: 1.35; }
+.grading-preview-table td strong { line-height: 1.4; }
+.grading-preview-table td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #9cacc4);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.grading-grade-pill {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 4px 8px;
+  border: 1px solid #2c465d;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  letter-spacing: .02em;
+}
+.grading-grade-pill.ready,
+.grading-grade-pill.hit { color: #9be9bd; border-color: #36775d; background: #14382a; }
+.grading-grade-pill.miss { color: #ffaaaa; border-color: #914848; background: #3a1d23; }
+.grading-grade-pill.review,
+.grading-grade-pill.push { color: #ffd18b; border-color: #8b622d; background: #3a2816; }
+.grading-grade-pill.settled { color: #afc8e7; border-color: #34516c; background: #1a2a40; }
+.grading-approval-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.grading-preview-card .grading-preview-note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.grading-preview-status-note {
+  padding: 13px 14px;
+  background: rgba(154,165,181,.07);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+@media (max-width: 760px) {
+  .grading-preview-card { padding: 17px 16px; }
+  .grading-preview-card .snapshot-report-header > div:first-child { flex-basis: 100%; }
+  .grading-preview-card .snapshot-report-header > .button { width: 100%; }
+  .grading-preview-controls { width: 100%; }
+  .grading-preview-controls .snapshot-week-select { flex: 1 1 132px; }
+  .grading-preview-controls .button { flex: 1 1 210px; white-space: normal; }
+}
+@media (max-width: 430px) {
+  .grading-preview-controls .snapshot-week-select,
+  .grading-preview-controls .button { width: 100%; flex-basis: 100%; }
+}
