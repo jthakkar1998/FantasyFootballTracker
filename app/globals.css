@@ -415,3 +415,22 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .snapshot-run-details td { font-size: 11px; overflow-wrap: anywhere; }
 .snapshot-footnote { font-size: 11px; line-height: 1.5; margin-bottom: 0; }
 @media (max-width: 720px) { .snapshot-report { padding: 14px; } .snapshot-week-select { width: 100%; } }
+
+/* Phase 2: Commissioner-only, read-only grading preview. */
+.grading-preview-card { margin-top: 20px; margin-bottom: 20px; }
+.grading-preview-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.grading-preview-controls .button { white-space: nowrap; }
+.grading-preview-table { min-width: 910px; }
+.grading-preview-table td { vertical-align: top; }
+.grading-preview-table td small { display: block; margin-top: 4px; color: var(--muted, #9cacc4); }
+.grading-grade-pill { display: inline-block; border-radius: 5px; padding: 4px 8px; border: 1px solid #2c465d; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.grading-grade-pill.ready { color: #9be9bd; border-color: #36775d; background: #14382a; }
+.grading-grade-pill.review { color: #ffd18b; border-color: #8b622d; background: #3a2816; }
+.grading-grade-pill.settled { color: #afc8e7; border-color: #34516c; background: #1a2a40; }
+.grading-preview-note { margin-top: 12px; font-size: 12px; }
+@media (max-width: 760px) {
+  .grading-preview-controls { width: 100%; }
+  .grading-preview-controls .button { width: 100%; }
+}
+
+.grading-approval-actions { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

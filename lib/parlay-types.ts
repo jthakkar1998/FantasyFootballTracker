@@ -33,6 +33,7 @@ export interface ParlaySubmission {
   opponent_team_id: number;
   opponent_team_name: string;
   espn_player_id: number;
+  pro_team_id?: number | null;
   player_name: string;
   player_position: string | null;
   sportsbook_player_id: string;
@@ -51,6 +52,7 @@ export interface ParlaySubmission {
   payment_verified_at: string | null;
   result_status: "pending" | "hit" | "miss" | "push" | "void";
   graded_at: string | null;
+  grade_source?: "manual" | "auto" | null;
   eligibility_at_lock: boolean | null;
   eligibility_reason: string | null;
   submitted_at: string;

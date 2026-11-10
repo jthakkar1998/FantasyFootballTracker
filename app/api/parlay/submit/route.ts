@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       opponent_team_id: team.opponentTeamId,
       opponent_team_name: team.opponentTeamName,
       espn_player_id: player.espnPlayerId,
+      pro_team_id: player.proTeamId,
       player_name: player.name,
       player_position: player.position,
       sportsbook_player_id: selected.playerId,

@@ -9,6 +9,7 @@ export interface ParlaySubmissionInput {
   opponent_team_id: number;
   opponent_team_name: string;
   espn_player_id: number;
+  pro_team_id: number | null;
   player_name: string;
   player_position: string | null;
   sportsbook_player_id: string;
@@ -48,6 +49,7 @@ export async function upsertParlaySubmission(input: ParlaySubmissionInput): Prom
     withdrawn_at: null,
     result_status: "pending",
     graded_at: null,
+    grade_source: null,
     payment_confirmed_at: existing?.payment_confirmed_at ?? input.payment_confirmed_at,
     payment_verified_at: existing?.payment_verified_at ?? null,
     eligibility_at_lock: null,
@@ -161,7 +163,7 @@ export async function updateParlayAdminStatus(args: {
   let patch: Record<string, string | null>;
   if (args.kind === "result") {
     if (!["pending", "hit", "miss", "push", "void"].includes(args.value)) throw new Error("Invalid result.");
-    patch = { result_status: args.value, graded_at: args.value === "pending" ? null : new Date().toISOString() };
+    patch = { result_status: args.value, graded_at: args.value === "pending" ? null : new Date().toISOString(), grade_source: "manual" };
   } else if (args.kind === "payment") {
     if (!["verified", "unverified"].includes(args.value)) throw new Error("Invalid payment action.");
     patch = { payment_verified_at: args.value === "verified" ? new Date().toISOString() : null };
