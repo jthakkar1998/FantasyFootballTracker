@@ -41,7 +41,7 @@ test("Central-time Sun noon through Mon 3am guard handles both CST and CDT", () 
   assert.deepEqual(chicagoLiveHitWindow("2026-09-13T17:00:00Z"), { active: true, sundayDate: "2026-09-13" }); // noon CDT
   assert.deepEqual(chicagoLiveHitWindow("2026-11-16T07:00:00Z"), { active: true, sundayDate: "2026-11-15" }); // Mon 1am CST
   assert.equal(chicagoLiveHitWindow("2026-11-16T09:00:00Z").active, false); // Mon 3am CST
-  assert.equal(chicagoLiveHitWindow("2026-11-15T17:59:59Z").active, false);
+  assert.equal(chicagoLiveHitWindow("2026-11-15T14:14:59Z").active, false);
   assert.equal(chicagoLiveHitWindow("2026-11-17T20:00:00Z").active, false);
 });
 

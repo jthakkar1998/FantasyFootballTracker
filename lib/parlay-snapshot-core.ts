@@ -1,6 +1,6 @@
 import { localDateParts, zonedLocalToIso } from "./parlay-time";
 
-export type SnapshotSlot = "backup" | "primary";
+export type SnapshotSlot = "early" | "submission" | "backup" | "primary";
 export interface SnapshotPick {
   id: string;
   season: number;
@@ -68,8 +68,10 @@ export function isPotentialSnapshotInstant(nowIso: string): boolean {
   }).formatToParts(date);
   const value = (type: string) => formatted.find(part => part.type === type)?.value;
   const minute = Number(value("minute"));
-  return value("weekday") === "Sun" && Number(value("hour")) === 11 &&
-    ((minute >= 45 && minute < 55) || (minute >= 56 && minute < 60));
+  return value("weekday") === "Sun" && (
+    (Number(value("hour")) === 8 && minute >= 0 && minute < 10) ||
+    (Number(value("hour")) === 11 && ((minute >= 45 && minute < 55) || (minute >= 56 && minute < 60)))
+  );
 }
 
 // These windows are purposely narrow. The cron job runs in UTC; the server
@@ -77,10 +79,13 @@ export function isPotentialSnapshotInstant(nowIso: string): boolean {
 export function snapshotSlotForInstant(nowIso: string, sundayDate: string): SnapshotSlot | null {
   const now = Date.parse(nowIso);
   if (!Number.isFinite(now) || localDateParts(nowIso, "America/Chicago").date !== sundayDate) return null;
+  const earlyStart = Date.parse(zonedLocalToIso(sundayDate, 8, 0, "America/Chicago"));
+  const earlyEnd = Date.parse(zonedLocalToIso(sundayDate, 8, 10, "America/Chicago"));
   const backupStart = Date.parse(zonedLocalToIso(sundayDate, 11, 45, "America/Chicago"));
   const lock = Date.parse(zonedLocalToIso(sundayDate, 11, 55, "America/Chicago"));
   const primaryStart = Date.parse(zonedLocalToIso(sundayDate, 11, 56, "America/Chicago"));
   const noon = Date.parse(zonedLocalToIso(sundayDate, 12, 0, "America/Chicago"));
+  if (now >= earlyStart && now < earlyEnd) return "early";
   if (now >= backupStart && now < lock) return "backup";
   if (now >= primaryStart && now < noon) return "primary";
   return null;
@@ -96,13 +101,18 @@ export function chooseGradingSnapshot(pick: SnapshotPick, snapshots: SnapshotRec
   selected: SnapshotRecord | null;
   source: SnapshotSlot | "missing";
 } {
-  // A pick may be replaced between the backup and primary slots. Never use a
-  // backup captured for a previous player or market on the same submission row.
-  const valid = snapshots.filter(record => record.submission_id === pick.id && selectionMatches(record, pick));
-  const primary = valid.find(record => record.snapshot_slot === "primary");
-  if (primary) return { selected: primary, source: "primary" };
-  const backup = valid.find(record => record.snapshot_slot === "backup");
-  return backup ? { selected: backup, source: "backup" } : { selected: null, source: "missing" };
+  // Only trust a quote captured before the precise kickoff. Old game quotes
+  // must never be displaced by an 11:45 or 11:56 post-kickoff observation.
+  const kickoff = Date.parse(pick.event_starts_at);
+  const valid = snapshots.filter(record => record.submission_id === pick.id &&
+    selectionMatches(record, pick) && Number.isFinite(kickoff) &&
+    Date.parse(record.captured_at) < kickoff &&
+    Number.isFinite(Date.parse(record.quote_updated_at)) &&
+    Date.parse(record.quote_updated_at) <= Date.parse(record.captured_at));
+  const order: Record<SnapshotSlot, number> = { early: 0, submission: 1, backup: 2, primary: 3 };
+  const selected = valid.sort((a, b) => Date.parse(b.captured_at) - Date.parse(a.captured_at) ||
+    order[b.snapshot_slot] - order[a.snapshot_slot])[0];
+  return selected ? { selected, source: selected.snapshot_slot } : { selected: null, source: "missing" };
 }
 
 export function parseFanDuelSnapshot(input: {

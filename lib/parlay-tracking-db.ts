@@ -71,6 +71,15 @@ export async function updateParlayWeeklyTeamTracking(args: {
   const { error } = await db.from("parlay_weekly_team_tracking").update(patch)
     .eq("season", season).eq("week", week).eq("team_id", teamId);
   if (error) throw new Error(`Could not update weekly tracking record: ${error.message}`);
+  if ((action === "outside" && value === "no") || (action === "outside_result" && value === "no_bet")) {
+    const { error: removeError } = await db.from("parlay_offapp_legs").delete()
+      .eq("season", season).eq("week", week).eq("team_id", teamId);
+    if (removeError) throw new Error(`Could not clear outdated off-app leg: ${removeError.message}`);
+  } else if (action === "outside_details") {
+    const { error: invalidateError } = await db.from("parlay_offapp_legs")
+      .update({ confirmed: false }).eq("season", season).eq("week", week).eq("team_id", teamId);
+    if (invalidateError) throw new Error(`Could not invalidate edited off-app leg: ${invalidateError.message}`);
+  }
 }
 
 /** Update multiple fields in one record without resetting unrelated payment data. */
@@ -128,4 +137,15 @@ export async function updateParlayWeeklyTeamTrackingFields(args: {
   const { error } = await db.from("parlay_weekly_team_tracking").update(patch)
     .eq("season", season).eq("week", week).eq("team_id", teamId);
   if (error) throw new Error(`Could not update weekly tracking record: ${error.message}`);
+  // Free-text edits or source changes invalidate previous structured details.
+  // Saving a new structured leg re-confirms it AFTER updating tracking.
+  if (args.outside === false || args.result === "no_bet") {
+    const { error: removeError } = await db.from("parlay_offapp_legs").delete()
+      .eq("season", season).eq("week", week).eq("team_id", teamId);
+    if (removeError) throw new Error(`Could not clear old off-app ticket leg: ${removeError.message}`);
+  } else if (args.details !== undefined) {
+    const { error: invalidateError } = await db.from("parlay_offapp_legs")
+      .update({ confirmed: false }).eq("season", season).eq("week", week).eq("team_id", teamId);
+    if (invalidateError) throw new Error(`Could not invalidate outdated off-app details: ${invalidateError.message}`);
+  }
 }

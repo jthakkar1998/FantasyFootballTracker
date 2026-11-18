@@ -24,7 +24,7 @@ export interface GradeDecision {
   statId: string;
   side: string;
   line: string | null;
-  source: "primary" | "backup" | "missing";
+  source: "early" | "submission" | "primary" | "backup" | "missing";
   status: GradeDecisionStatus;
   predictedResult: AutoGradeResult | null;
   actualValue: number | null;
@@ -167,7 +167,16 @@ export function makeBaseGradeDecision(pick: GradingPick, snapshots: SnapshotReco
   if (pick.bookmaker.toLowerCase() !== "fanduel") return { ...base, reason: "Not a FanDuel website selection." };
   if (pick.eligibility_at_lock !== true) return { ...base, reason: pick.eligibility_at_lock === false ? "Player failed eligibility check at Sunday lock." : "Sunday eligibility lock not confirmed." };
   if (selected.source === "missing") return { ...base, reason: "No matching Sunday snapshot for this pick." };
-  if (selected.source === "backup") return { ...base, reason: "Only 11:45 backup exists; commissioner approval required before grading." };
+  // A non-primary quote can auto-grade only when the game started before
+  // the usual 11:56 capture. Otherwise keep the old conservative review rule.
+  if (selected.source !== "primary") {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(pick.event_starts_at));
+    const hour = Number(parts.find(p => p.type === "hour")?.value ?? -1);
+    const minute = Number(parts.find(p => p.type === "minute")?.value ?? -1);
+    if (hour > 11 || (hour === 11 && minute >= 56)) {
+      return { ...base, reason: "Primary pregame snapshot missing for a game that starts after 11:56 AM; commissioner review required." };
+    }
+  }
   return { ...base, status: "ready", reason: "Awaiting final NFL statistic." };
 }
 

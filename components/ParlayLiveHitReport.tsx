@@ -26,9 +26,9 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
   return <div className="card grading-preview-card">
     <div className="snapshot-report-header">
       <div>
-        <h3>Phase 2 · Live hit notifications</h3>
-        <p className="parlay-muted">Checks only your league&apos;s current Sunday picks every 3 minutes while games are underway. Over/Yes can alert live; Under/No only after final NFL stats. These alerts are <strong>provisional</strong> and never grade or change a bet.</p>
-        <p className="parlay-muted"><strong>Push sending: {enabled ? "Enabled (live schedule required)" : "OFF"}</strong>. Each registered phone gets at most one accepted push per matching pick.</p>
+        <h3>League ticket · live notifications</h3>
+        <p className="parlay-muted">Monitors both website and verified off-app legs. Hits are broadcast to all subscribed phones; one verified loss sends the league-wide dead-ticket alert and ends further hits. Monitoring begins 8:15 AM Sunday Central. No official grading or payments are changed.</p>
+        <p className="parlay-muted"><strong>League-wide push sending: {enabled ? "Enabled" : "OFF"}</strong>. Unverified off-app entries pause hit alerts.</p>
       </div>
       <button type="button" className="button primary" disabled={busy} onClick={() => void preview()}>
         {busy ? "Checking live stats…" : "Preview live alerts (read-only)"}
@@ -41,17 +41,20 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
         <span><strong>{report.eligiblePicks}</strong> eligible picks</span>
         <span><strong>{report.currentlyHitting}</strong> currently hitting</span>
         <span><strong>{report.registeredDevices}</strong> league devices</span>
+        <span><strong>{report.ticketStatus.replaceAll("_", " ")}</strong> ticket</span>
+        <span><strong>{report.unresolved.length}</strong> unresolved</span>
         <span><strong>0</strong> pushes sent by preview</span>
       </div>
       <p className="parlay-muted">{report.note}</p>
+      {report.unresolved.length ? <p className="notice error">Ticket needs verification: {report.unresolved.join("; ")}</p> : null}
       {report.errors.length ? <p className="notice error">ESPN data issues: {report.errors.join("; ")}</p> : null}
       {report.rows.length ? <div className="table-wrap"><table className="snapshot-table grading-preview-table grading-preview-table--live">
         <thead><tr><th>Team / Player</th><th>Sunday FanDuel line</th><th>ESPN stat</th><th>Live status</th><th>Explanation</th></tr></thead>
         <tbody>{report.rows.map((row, index) => <tr key={`${row.team}-${index}`}>
-          <td><strong>{row.team}</strong><small>{row.player}</small></td>
+          <td><strong>{row.team}</strong><small>{row.player} · {row.source === "offapp" ? "Off-app" : "Website"}</small></td>
           <td>{row.side.toUpperCase()} {row.line ?? ""}<small>{row.statId.replaceAll("_", " ")}</small></td>
           <td>{row.actualValue ?? "—"}<small>{row.gameFinal ? "Final" : "In-game / not yet final"}</small></td>
-          <td><span className={`grading-grade-pill ${row.status === "hit" ? "ready" : row.status === "review" ? "review" : "settled"}`}>{row.status === "hit" ? "HITTING" : row.status === "waiting" ? "Waiting" : "Review"}</span></td>
+          <td><span className={`grading-grade-pill ${row.status === "hit" ? "ready" : row.status === "review" || row.status === "miss" ? "review" : "settled"}`}>{row.status === "hit" ? "HITTING" : row.status === "miss" ? "MISSED" : row.status === "waiting" ? "Waiting" : "Review"}</span></td>
           <td><small>{row.reason}</small></td>
         </tr>)}</tbody>
       </table></div> : null}
