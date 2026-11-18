@@ -1,6 +1,9 @@
 import { getCurrentParlayContext, getEligiblePlayer, getTeamContext } from "@/lib/parlay";
 import { upsertParlaySubmission } from "@/lib/parlay-db";
-import { getFanDuelProps } from "@/lib/sports-odds";
+import { getFanDuelProps, fetchSnapshotFanDuelMarkets } from "@/lib/sports-odds";
+import { parseFanDuelSnapshot } from "@/lib/parlay-snapshot-core";
+import { storeSnapshotRows } from "@/lib/parlay-snapshot-db";
+import { localDateParts, zonedLocalToIso } from "@/lib/parlay-time";
 
 export async function POST(request: Request) {
   try {
@@ -62,7 +65,29 @@ export async function POST(request: Request) {
       submitted_by_name: submittedBy,
       payment_confirmed_at: new Date().toISOString()
     });
-    return Response.json({ ok: true, submission: saved });
+    // Picks placed after the 8 AM preliminary capture but before an early
+    // kickoff need their own exact, provider-verified, pregame quote.
+    // Never alter the original bet if the market fetch fails: expose a clear
+    // warning and keep the selection pending commissioner review.
+    let snapshotWarning: string | null = null;
+    const now = new Date().toISOString();
+    const earlyStart = Date.parse(zonedLocalToIso(context.sundayDate, 8, 0, "America/Chicago"));
+    const gameStart = Date.parse(saved.event_starts_at);
+    const elevenFortyFive = Date.parse(zonedLocalToIso(context.sundayDate, 11, 45, "America/Chicago"));
+    if (process.env.PARLAY_SNAPSHOTS_ENABLED === "true" &&
+      localDateParts(now, "America/Chicago").date === context.sundayDate &&
+      Date.parse(now) >= earlyStart && gameStart < elevenFortyFive) {
+      try {
+        const matches = await fetchSnapshotFanDuelMarkets([{ eventId: saved.event_id, oddId: saved.market_id }]);
+        const parsed = parseFanDuelSnapshot({ pick: saved, event: matches.find(event => event.eventID === saved.event_id),
+          slot: "submission", capturedAt: new Date().toISOString() });
+        if (!parsed.record) snapshotWarning = parsed.reason ?? "Unable to verify a pregame quote.";
+        else await storeSnapshotRows([parsed.record]);
+      } catch (error) {
+        snapshotWarning = error instanceof Error ? error.message : "Unable to save early-game snapshot.";
+      }
+    }
+    return Response.json({ ok: true, submission: saved, snapshotWarning });
   } catch (error) {
     return Response.json({ ok: false, error: error instanceof Error ? error.message : "Could not save pick." }, { status: 500 });
   }

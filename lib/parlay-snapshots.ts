@@ -1,4 +1,3 @@
-import { leagueConfig } from "./config";
 import { getCurrentParlayContext } from "./parlay";
 import { listSnapshotPicks, listSnapshots, saveSnapshotRun, storeSnapshotRows } from "./parlay-snapshot-db";
 import { parseFanDuelSnapshot, snapshotSlotForInstant, selectionMatches, isPotentialSnapshotInstant, type SnapshotOddsEvent, type SnapshotSlot } from "./parlay-snapshot-core";

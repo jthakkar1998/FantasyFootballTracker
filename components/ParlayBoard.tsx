@@ -147,7 +147,9 @@ export function ParlayBoard({
       });
       const body = await response.json();
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not submit pick.");
-      setMessage("Pick submitted. Everyone on the league page can now see it.");
+      setMessage(body.snapshotWarning
+        ? `Pick submitted, but its early-game FanDuel snapshot needs Commissioner review: ${body.snapshotWarning}`
+        : "Pick submitted. Everyone on the league page can now see it.");
       setSelectedProp(null);
       setPropData(null);
       setPaymentModalOpen(false);

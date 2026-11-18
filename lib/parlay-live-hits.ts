@@ -1,257 +1,272 @@
 import { leagueConfig } from "./config";
+import { fetchLeagueSummary } from "./espn";
 import { fetchNflWeekEvents } from "./nfl";
-import { listParlaySubmissions } from "./parlay-db";
+import { verifiedNflSundayDate } from "./nfl-week-calendar";
+import { listParlaySubmissions, getCachedOdds, setCachedOdds } from "./parlay-db";
+import { listParlayWeeklyTeamTracking } from "./parlay-tracking-db";
+import { listOffAppLegs } from "./parlay-offapp";
 import { listSnapshots } from "./parlay-snapshot-db";
 import { getDb } from "./supabase";
 import { sendWebPush, webPushConfigured, type BrowserPushSubscription } from "./web-push";
-import {
-  chicagoDate, chicagoLiveHitWindow, eligibleLiveHitPick, evaluateLiveHit,
-  liveHitNotificationCopy, type LiveHitPick
-} from "./parlay-live-hit-core";
+import { chicagoDate, chicagoLiveHitWindow, eligibleLiveHitPick, type LiveHitPick } from "./parlay-live-hit-core";
+import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy, deadBroadcastCopy, type TicketLeg } from "./parlay-ticket-core";
 import type { EspnNflSummary } from "./parlay-grade-core";
 import type { NflEvent } from "./types";
 
-const ESPN_NFL_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary";
+const ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary";
 const MIN_WEEK = Number(process.env.PARLAY_LIVE_HITS_MIN_WEEK ?? "10");
 
-interface RegisteredPhone {
-  id: string;
-  team_id: number;
-  endpoint: string;
-  subscription: BrowserPushSubscription;
-}
-interface SavedDelivery {
-  submission_id: string;
-  subscription_id: string;
-  status: "sent" | "expired" | "failed" | "attempting";
-  attempt_count: number;
-}
-
+interface RegisteredPhone { id: string; team_id: number; endpoint: string; subscription: BrowserPushSubscription }
+interface TicketDelivery { alert_key: string; subscription_id: string; status: string; attempt_count: number }
+interface TicketState { status: "alive" | "dead"; dead_alert_key: string | null; dead_reason: string | null }
 export interface LiveHitPreviewRow {
-  team: string;
-  player: string;
-  statId: string;
-  side: string;
-  line: string | null;
-  actualValue: number | null;
-  gameFinal: boolean;
-  status: "hit" | "waiting" | "review";
-  reason: string;
+  team: string; player: string; statId: string; side: string; line: string | null;
+  actualValue: number | null; gameFinal: boolean;
+  status: "hit" | "miss" | "waiting" | "review";
+  reason: string; source: "website" | "offapp";
 }
 export interface LiveHitRunResult {
   status: "disabled" | "no_window" | "empty" | "preview" | "sent" | "partial";
-  season: number;
-  week: number | null;
-  eligiblePicks: number;
-  currentlyHitting: number;
-  registeredDevices: number;
-  attempted: number;
-  sent: number;
-  failed: number;
-  skipped: number;
-  rows: LiveHitPreviewRow[];
-  errors: string[];
-  note: string;
+  season: number; week: number | null; eligiblePicks: number; currentlyHitting: number;
+  registeredDevices: number; attempted: number; sent: number; failed: number; skipped: number;
+  ticketStatus: "alive" | "dead" | "needs_verification" | "unknown";
+  unresolved: string[]; noBetCount: number;
+  rows: LiveHitPreviewRow[]; errors: string[]; note: string;
 }
 
 async function nflSummary(eventId: string): Promise<EspnNflSummary> {
-  const response = await fetch(`${ESPN_NFL_SUMMARY_URL}?${new URLSearchParams({ event: eventId })}`, {
+  const response = await fetch(`${ESPN_SUMMARY}?${new URLSearchParams({ event: eventId })}`, {
     headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(8000)
   });
-  if (!response.ok) throw new Error(`ESPN NFL summary returned HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`ESPN summary HTTP ${response.status}`);
   return await response.json() as EspnNflSummary;
 }
-
-/** Never match a player to a game just by their name or a common kickoff time.
- * The ESPN fantasy proTeamId must identify exactly one NFL scoreboard event. */
-function findNflGame(events: NflEvent[], pick: LiveHitPick): NflEvent | null {
-  const starts = Date.parse(pick.event_starts_at);
-  if (!Number.isFinite(starts)) return null;
-  const matched = events.filter(event => {
-    const eventStart = Date.parse(event.date);
-    return Number.isFinite(eventStart) && Math.abs(eventStart - starts) <= 3 * 60 * 60_000 &&
-      (event.competitions?.[0]?.competitors ?? []).some(c => Number(c.team?.id) === pick.pro_team_id);
-  });
-  return matched.length === 1 ? matched[0] : null;
+async function teamIdsForLeague(): Promise<number[]> {
+  const key = `ticket:verified-roster:${leagueConfig.season}`;
+  const cached = await getCachedOdds<number[]>(key);
+  if (cached && cached.payload.length === 10 && Date.now() - Date.parse(cached.fetchedAt) < 7 * 86_400_000) return cached.payload;
+  try {
+    const summary = await fetchLeagueSummary();
+    const ids = (summary.teams ?? []).map(t => t.id);
+    if (ids.length !== 10 || new Set(ids).size !== 10) throw new Error("League roster not uniquely verified as 10 teams.");
+    await setCachedOdds(key, ids, new Date().toISOString());
+    return ids;
+  } catch (error) {
+    if (cached && cached.payload.length === 10 && Date.now() - Date.parse(cached.fetchedAt) < 30 * 86_400_000) return cached.payload;
+    throw error;
+  }
+}
+function matchingNflGame(events: NflEvent[], leg: TicketLeg): NflEvent | null {
+  const starts = Date.parse(leg.eventStartsAt);
+  const found = events.filter(event => Number.isFinite(starts) &&
+    Math.abs(Date.parse(event.date) - starts) <= 3 * 3_600_000 &&
+    (!leg.nflEventId || leg.nflEventId === event.id) &&
+    (event.competitions?.[0]?.competitors ?? []).some(c => Number(c.team?.id) === leg.proTeamId));
+  return found.length === 1 ? found[0] : null;
+}
+function canSend(delivery: TicketDelivery | undefined) {
+  return !delivery || (delivery.status !== "sent" && delivery.status !== "expired" && delivery.attempt_count < 3);
 }
 
-function couldStillNotify(delivery: SavedDelivery | undefined): boolean {
-  if (!delivery) return true;
-  if (delivery.status === "sent" || delivery.status === "expired") return false;
-  return delivery.attempt_count < 3;
-}
-
-/** Dry runs make NO writes and send NO pushes, even if the Vercel flag is on.
- * Live calls are triple-gated: Vercel env, Chicago local time, and Supabase Cron
- * private enqueue guard. Historical Week 9 data will never trigger live pushes. */
+/** New league-wide workflow; NEVER call the legacy individual-team delivery RPC.
+ * The league broadcast is opt-in independently from the previous live-hit flag.
+ * A false gate makes the already-active Cron safe across deployment/migration. */
 export async function runLiveHitNotifications(args: { dryRun: boolean; nowIso?: string }): Promise<LiveHitRunResult> {
   const nowIso = args.nowIso ?? new Date().toISOString();
-  const empty = (status: LiveHitRunResult["status"], note: string): LiveHitRunResult => ({
-    status, season: leagueConfig.season, week: null, eligiblePicks: 0,
-    currentlyHitting: 0, registeredDevices: 0, attempted: 0, sent: 0, failed: 0,
-    skipped: 0, rows: [], errors: [], note
-  });
-  if (!args.dryRun && process.env.PARLAY_LIVE_HITS_ENABLED !== "true") {
-    return empty("disabled", "Live push notifications are disabled in Vercel. No alerts sent.");
-  }
-  if (!Number.isInteger(MIN_WEEK) || MIN_WEEK < 1 || MIN_WEEK > 22) {
-    throw new Error("Invalid PARLAY_LIVE_HITS_MIN_WEEK. Must be 1–22.");
-  }
-  const time = chicagoLiveHitWindow(nowIso);
-  if (!time.active || !time.sundayDate) {
-    return empty("no_window", "Outside the live monitoring window (Sunday noon–Monday 3 AM Chicago time). The preview endpoint is reachable, but no pick, device, or ESPN stat checks were performed. No pushes were sent.");
-  }
-  if (!args.dryRun && !webPushConfigured()) throw new Error("VAPID Web Push credentials are not configured.");
-
-  // Active snapshot must have been captured THIS Sunday, never a previous week.
-  const snapshots = (await listSnapshots(leagueConfig.season)).filter(s =>
-    s.snapshot_slot === "primary" && s.week >= MIN_WEEK && chicagoDate(s.captured_at) === time.sundayDate);
-  const candidateWeeks = [...new Set(snapshots.map(s => s.week))];
-  if (!candidateWeeks.length) return empty("empty", "No primary FanDuel snapshots captured this Sunday. No alerts possible.");
-  if (candidateWeeks.length !== 1) throw new Error("Multiple fantasy weeks have primary snapshots for the same Sunday; refusing to alert.");
-  const week = candidateWeeks[0];
-
-  const [picks, subscriptionsResponse, sentResponse] = await Promise.all([
-    listParlaySubmissions(leagueConfig.season, week),
-    getDb().from("parlay_push_subscriptions").select("id,team_id,endpoint,subscription"),
-    getDb().from("parlay_live_hit_deliveries")
-      .select("submission_id,subscription_id,status,attempt_count")
-      .eq("season", leagueConfig.season).eq("week", week)
-  ]);
-  if (subscriptionsResponse.error) throw new Error(`Unable to read push devices: ${subscriptionsResponse.error.message}`);
-  if (sentResponse.error) throw new Error(`Unable to read live alert delivery history: ${sentResponse.error.message}`);
-  const phones = (subscriptionsResponse.data ?? []) as RegisteredPhone[];
-  const deliveries = new Map<string, SavedDelivery>();
-  for (const d of (sentResponse.data ?? []) as SavedDelivery[]) deliveries.set(`${d.submission_id}:${d.subscription_id}`, d);
-  const candidates = (picks as LiveHitPick[])
-    .map(pick => ({ pick, check: eligibleLiveHitPick(pick, snapshots) }))
-    .filter(({ check }) => check.eligible);
-
   const result: LiveHitRunResult = {
-    ...empty(args.dryRun ? "preview" : "sent", "Live game statistics are informational; final grading is separate."),
-    week, eligiblePicks: candidates.length, registeredDevices: phones.length
+    status: args.dryRun ? "preview" : "sent", season: leagueConfig.season, week: null,
+    eligiblePicks: 0, currentlyHitting: 0, registeredDevices: 0,
+    attempted: 0, sent: 0, failed: 0, skipped: 0, ticketStatus: "unknown",
+    unresolved: [], noBetCount: 0, rows: [], errors: [], note: ""
   };
-  if (!candidates.length || !phones.some(phone => candidates.some(c => c.pick.team_id === phone.team_id))) {
-    result.note = "No eligible snapshotted picks with a registered device. No ESPN NFL calls or pushes needed.";
-    return result;
+  if (!args.dryRun && (process.env.PARLAY_LIVE_HITS_ENABLED !== "true" ||
+      process.env.PARLAY_LEAGUE_TICKET_NOTIFICATIONS_ENABLED !== "true")) {
+    return { ...result, status: "disabled", note: "League-wide live notifications are disabled until the new migration and verification are complete." };
   }
-  // Once every device received its notification, stop polling that player.
-  const relevant = candidates.filter(({ pick }) => phones.some(phone => phone.team_id === pick.team_id &&
-    couldStillNotify(deliveries.get(`${pick.id}:${phone.id}`))));
-  if (!relevant.length && !args.dryRun) {
-    result.note = "All possible alerts have already been delivered or exhausted retries.";
-    return result;
+  if (!Number.isInteger(MIN_WEEK) || MIN_WEEK < 1 || MIN_WEEK > 22) throw new Error("Invalid minimum live-hit week.");
+  const window = chicagoLiveHitWindow(nowIso);
+  if (!window.active || !window.sundayDate) return { ...result, status: "no_window", note: "Outside Sunday 8:15 AM–Monday 3 AM Central monitoring window. No ESPN/push checks performed." };
+  if (!args.dryRun && !webPushConfigured()) throw new Error("VAPID Web Push credentials are not configured.");
+  const weeks = Array.from({ length: 18 }, (_, i) => i + 1).filter(w => verifiedNflSundayDate(leagueConfig.season, w) === window.sundayDate && w >= MIN_WEEK);
+  if (weeks.length !== 1) return { ...result, status: "empty", note: "No uniquely verified NFL fantasy week matches this Sunday." };
+  const week = weeks[0]; result.week = week;
+
+  const [website, trackingAll, offapp, snapshots, roster, subscriptionsResponse, stateResponse, deliveryResponse] = await Promise.all([
+    listParlaySubmissions(leagueConfig.season, week),
+    listParlayWeeklyTeamTracking(leagueConfig.season),
+    listOffAppLegs(leagueConfig.season, week),
+    listSnapshots(leagueConfig.season, week),
+    teamIdsForLeague(),
+    getDb().from("parlay_push_subscriptions").select("id,team_id,endpoint,subscription"),
+    getDb().from("parlay_ticket_state").select("status,dead_alert_key,dead_reason").eq("season",leagueConfig.season).eq("week",week).maybeSingle(),
+    getDb().from("parlay_ticket_alert_deliveries").select("alert_key,subscription_id,status,attempt_count").eq("season",leagueConfig.season).eq("week",week)
+  ]);
+  if (subscriptionsResponse.error || stateResponse.error || deliveryResponse.error) throw new Error(
+    `Ticket broadcast data unavailable: ${subscriptionsResponse.error?.message ?? stateResponse.error?.message ?? deliveryResponse.error?.message}`);
+  const state = stateResponse.data as TicketState | null;
+  const phones = (subscriptionsResponse.data ?? []) as RegisteredPhone[];
+  result.registeredDevices = phones.length;
+  const existing = new Map<string,TicketDelivery>();
+  for (const delivery of (deliveryResponse.data ?? []) as TicketDelivery[]) existing.set(`${delivery.alert_key}:${delivery.subscription_id}`, delivery);
+  const tracking = trackingAll.filter(t => t.week === week);
+  const ticket = reconcileTicket({ teamIds: roster, websitePicks: website, offapp, tracking });
+  result.noBetCount = ticket.noBetCount;
+  result.unresolved.push(...ticket.unresolved);
+  result.eligiblePicks = ticket.legs.length;
+  if (!args.dryRun) {
+    const { error } = await getDb().from("parlay_ticket_state").upsert({ season: leagueConfig.season, week },
+      { onConflict: "season,week", ignoreDuplicates: true });
+    if (error) throw new Error(`Unable to initialize ticket status: ${error.message}`);
   }
-  const items = args.dryRun ? candidates : relevant;
-  const events = await fetchNflWeekEvents(week); // single NFL schedule request per run
-  const gameByPick = new Map<string, NflEvent>();
-  for (const { pick } of items) {
-    const event = findNflGame(events, pick);
-    if (!event) {
-      result.rows.push({ team: pick.team_name, player: pick.player_name, statId: pick.stat_id,
-        side: pick.side_id, line: null, actualValue: null, gameFinal: false, status: "review",
-        reason: "Could not uniquely verify player's NFL team and Sunday game." });
-      continue;
+
+  let dead: { key: string; teamId: number; title: string; body: string } | null = null;
+  if (state?.status === "dead") {
+    dead = { key: state.dead_alert_key ?? "", teamId: 0, title: "League parlay is DEAD!",
+      body: state.dead_reason ?? "A verified losing leg ended the league ticket. No more hit alerts this week." };
+    result.ticketStatus = "dead";
+  } else if (ticket.manualLoss) {
+    const m = ticket.manualLoss;
+    dead = { key: m.key, teamId: m.teamId, ...deadBroadcastCopy(m.teamName, m.player, m.description) };
+  }
+
+  const hits: Array<{ leg: TicketLeg; key: string; actual: number; final: boolean }> = [];
+  if (!dead) {
+    const events = await fetchNflWeekEvents(week);
+    const eventByLeg = new Map<string,NflEvent>();
+    for (const leg of ticket.legs) {
+      if (leg.source === "website") {
+        const check = eligibleLiveHitPick(leg.websitePick as LiveHitPick, snapshots);
+        if (!check.eligible) { result.unresolved.push(`${leg.teamName}: ${check.reason}`); continue; }
+        leg.line = check.line;
+      }
+      const event = matchingNflGame(events, leg);
+      if (!event) { result.unresolved.push(`${leg.teamName}: could not uniquely verify the player's NFL game.`); continue; }
+      eventByLeg.set(leg.key, event);
     }
-    gameByPick.set(pick.id, event);
+    const started = [...new Set([...eventByLeg.values()].filter(event => Date.parse(event.date) <= Date.parse(nowIso)).map(e => e.id))];
+    const summaries = new Map<string,EspnNflSummary | Error>();
+    for (let offset=0; offset<started.length; offset+=4) {
+      await Promise.all(started.slice(offset,offset+4).map(async eventId => {
+        try { summaries.set(eventId, await nflSummary(eventId)); }
+        catch (error) { summaries.set(eventId, error instanceof Error ? error : new Error("NFL box score unavailable.")); }
+      }));
+    }
+    for (const leg of ticket.legs) {
+      const event = eventByLeg.get(leg.key); if (!event) continue;
+      if (Date.parse(event.date) > Date.parse(nowIso)) {
+        result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId, side: leg.side,
+          line: leg.line, actualValue: null, gameFinal: false, status: "waiting", source: leg.source, reason: "Game not started." });
+        continue;
+      }
+      const summary = summaries.get(event.id);
+      if (!summary || summary instanceof Error) {
+        const reason = summary instanceof Error ? summary.message : "NFL box score unavailable.";
+        result.errors.push(`${leg.teamName}: ${reason}`);
+        result.unresolved.push(`${leg.teamName}: ${reason}`);
+        result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
+          side: leg.side, line: leg.line, actualValue: null, gameFinal: false, status: "review", reason, source: leg.source });
+        continue;
+      }
+      const verdict = evaluateTicketLeg(summary, leg);
+      result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
+        side: leg.side, line: leg.line, actualValue: verdict.actualValue,
+        gameFinal: verdict.final, status: verdict.state, reason: verdict.reason, source: leg.source });
+      if (verdict.state === "miss") {
+        dead = { key: `dead:${leg.key}`, teamId: leg.teamId,
+          ...deadBroadcastCopy(leg.teamName, leg.playerName, `${leg.side.toUpperCase()} ${leg.line ?? ""} ${leg.statId} (final NFL stat ${verdict.actualValue})`) };
+        break;
+      }
+      if (verdict.state === "review") result.unresolved.push(`${leg.teamName}: ${verdict.reason}`);
+      if (verdict.state === "hit" && verdict.actualValue !== null && leg.allowLiveHit)
+        hits.push({ leg, key: `hit:${leg.key}`, actual: verdict.actualValue, final: verdict.final });
+    }
   }
-  const startedEvents = [...new Set([...gameByPick.values()]
-    .filter(event => Date.parse(event.date) <= Date.parse(nowIso)).map(event => event.id))];
-  const summaries = new Map<string, EspnNflSummary | Error>();
-  for (let i = 0; i < startedEvents.length; i += 4) {
-    await Promise.all(startedEvents.slice(i, i + 4).map(async eventId => {
-      try { summaries.set(eventId, await nflSummary(eventId)); }
-      catch (error) { summaries.set(eventId, error instanceof Error ? error : new Error("NFL stat lookup failed.")); }
+
+  result.currentlyHitting = hits.length;
+  if (dead) {
+    result.ticketStatus = "dead";
+    // First definitive miss permanently seals this week's league ticket.
+    if (!args.dryRun && state?.status !== "dead") {
+      const { data, error } = await getDb().rpc("mark_parlay_ticket_dead", {
+        p_season: leagueConfig.season, p_week: week, p_alert_key: dead.key, p_reason: dead.body
+      });
+      if (error) throw new Error(`Could not seal dead ticket: ${error.message}`);
+      if (data !== dead.key) {
+        dead = { key: String(data ?? ""), teamId: 0, title: "League parlay is DEAD!",
+          body: "A verified losing leg ended the league ticket. No more hit alerts this week." };
+      }
+    }
+  } else if (result.unresolved.length) result.ticketStatus = "needs_verification";
+  else result.ticketStatus = "alive";
+  if (args.dryRun) {
+    result.note = "READ ONLY: no league-wide pushes, grades, payments, or ticket status updated.";
+    return result;
+  }
+  if (result.ticketStatus === "needs_verification") {
+    result.note = "League hits paused: reconcile missing/off-app picks or uncertain player/game data first.";
+    return result;
+  }
+  const alerts = dead ? [dead] : hits.map(h => ({ key: h.key, teamId: h.leg.teamId,
+    ...hitBroadcastCopy(h.leg, h.actual, h.final) }));
+  for (const alert of alerts) {
+    const isDead = alert.key.startsWith("dead:");
+    await Promise.all(phones.map(async phone => {
+      if (!canSend(existing.get(`${alert.key}:${phone.id}`))) { result.skipped++; return; }
+      const { data: claimRows, error: claimError } = await getDb().rpc("claim_parlay_ticket_alert", {
+        p_season: leagueConfig.season, p_week: week, p_alert_key: alert.key,
+        p_kind: isDead ? "dead" : "hit", p_source_team_id: alert.teamId, p_subscription_id: phone.id
+      });
+      if (claimError) { result.failed++; result.errors.push(claimError.message); return; }
+      const claim = (claimRows as Array<{ delivery_id: string; attempts: number }> | null)?.[0];
+      if (!claim) { result.skipped++; return; }
+      result.attempted++;
+      if (!isDead) {
+        const { data: currentState, error: stateError } = await getDb().from("parlay_ticket_state")
+          .select("status").eq("season", leagueConfig.season).eq("week", week).maybeSingle();
+        if (stateError || currentState?.status !== "alive") {
+          await getDb().from("parlay_ticket_alert_deliveries")
+            .update({ status: "failed", last_error: "Ticket closed before push sending." })
+            .eq("id", claim.delivery_id).eq("attempt_count", claim.attempts);
+          result.skipped++;
+          return;
+        }
+      }
+      let code: number | null = null;
+      let status: "sent" | "failed" | "expired" = "failed";
+      let message: string | null = null;
+      try {
+        code = await sendWebPush(phone.subscription, { title: alert.title, body: alert.body,
+          url: "/parlay", urgent: isDead });
+        if (code >= 200 && code < 300) status = "sent";
+        else if (code === 404 || code === 410) status = "expired";
+        else message = `Web Push provider HTTP ${code}`;
+      } catch (e) { message = e instanceof Error ? e.message.slice(0,300) : "Push failed"; }
+      const { error: updateError } = await getDb().from("parlay_ticket_alert_deliveries")
+        .update({ status, sent_at: status === "sent" ? new Date().toISOString() : null,
+          last_http_status: code, last_error: message })
+        .eq("id", claim.delivery_id).eq("attempt_count", claim.attempts).eq("status", "attempting");
+      if (updateError) { result.failed++; result.errors.push(updateError.message); return; }
+      if (status === "sent") result.sent++;
+      else {
+        result.failed++; if (message) result.errors.push(message);
+        if (status === "expired") {
+          const { error } = await getDb().from("parlay_push_subscriptions")
+            .delete().eq("id",phone.id).eq("endpoint",phone.endpoint);
+          if (error) result.errors.push(error.message);
+        }
+      }
     }));
   }
-
-  const sending: Array<Promise<void>> = [];
-  for (const { pick, check } of items) {
-    const event = gameByPick.get(pick.id);
-    if (!event) continue;
-    if (Date.parse(event.date) > Date.parse(nowIso)) {
-      result.rows.push({ team: pick.team_name, player: pick.player_name, statId: pick.stat_id,
-        side: pick.side_id, line: check.line, actualValue: null, gameFinal: false,
-        status: "waiting", reason: "NFL game has not kicked off." });
-      continue;
-    }
-    const summary = summaries.get(event.id);
-    if (!summary || summary instanceof Error) {
-      const reason = summary instanceof Error ? summary.message : "NFL box score unavailable.";
-      result.errors.push(`${pick.team_name} / ${pick.player_name}: ${reason}`);
-      result.rows.push({ team: pick.team_name, player: pick.player_name, statId: pick.stat_id,
-        side: pick.side_id, line: check.line, actualValue: null, gameFinal: false,
-        status: "review", reason });
-      continue;
-    }
-    const verdict = evaluateLiveHit(summary, pick, check.line);
-    result.rows.push({ team: pick.team_name, player: pick.player_name, statId: pick.stat_id,
-      side: pick.side_id, line: check.line, actualValue: verdict.actualValue,
-      gameFinal: verdict.final, status: verdict.state, reason: verdict.reason });
-    if (verdict.state !== "hit") continue;
-    result.currentlyHitting++;
-    if (args.dryRun) continue;
-    const listeners = phones.filter(phone => phone.team_id === pick.team_id);
-    for (const phone of listeners) {
-      if (!couldStillNotify(deliveries.get(`${pick.id}:${phone.id}`))) { result.skipped++; continue; }
-      sending.push((async () => {
-        const { data, error: claimError } = await getDb().rpc("claim_parlay_live_hit_delivery", {
-          p_season: leagueConfig.season, p_week: week, p_team_id: pick.team_id,
-          p_submission_id: pick.id, p_subscription_id: phone.id,
-          p_nfl_event_id: event.id, p_stat_id: pick.stat_id, p_side_id: pick.side_id,
-          p_frozen_line: check.line, p_observed_value: verdict.actualValue,
-          p_game_final: verdict.final
-        });
-        if (claimError) { result.failed++; result.errors.push(`Could not reserve push for ${pick.team_name}: ${claimError.message}`); return; }
-        const claim = (data as Array<{ delivery_id: string; attempts: number }> | null)?.[0];
-        if (!claim) { result.skipped++; return; }
-        result.attempted++;
-        let status: "sent" | "expired" | "failed" = "failed";
-        let code: number | null = null;
-        let message: string | null = null;
-        try {
-          code = await sendWebPush(phone.subscription, {
-            ...liveHitNotificationCopy(pick, check.line, verdict.actualValue!, verdict.final),
-            url: "/parlay", urgent: false
-          });
-          if (code >= 200 && code < 300) status = "sent";
-          else if (code === 404 || code === 410) status = "expired";
-          else message = `Web Push service returned HTTP ${code}.`;
-        } catch (error) { message = error instanceof Error ? error.message.slice(0, 300) : "Web Push delivery failed."; }
-        // Match the claimed attempt so a stale worker cannot replace a newer status.
-        const { error: updateError } = await getDb().from("parlay_live_hit_deliveries")
-          .update({ status, sent_at: status === "sent" ? new Date().toISOString() : null,
-            last_http_status: code, last_error: message })
-          .eq("id", claim.delivery_id).eq("attempt_count", claim.attempts).eq("status", "attempting");
-        if (updateError) { result.failed++; result.errors.push(`Could not log notification result: ${updateError.message}`); return; }
-        if (status === "sent") result.sent++;
-        else {
-          result.failed++;
-          if (message) result.errors.push(`${pick.team_name}: ${message}`);
-          if (status === "expired") {
-            // Remove only the expired device, not other members' subscriptions.
-            const { error: deleteError } = await getDb().from("parlay_push_subscriptions")
-              .delete().eq("id", phone.id).eq("endpoint", phone.endpoint);
-            if (deleteError) result.errors.push(`Could not remove expired device: ${deleteError.message}`);
-          }
-        }
-      })());
-    }
-  }
-  await Promise.all(sending);
-  if (!args.dryRun) {
-    result.status = result.errors.length || result.failed ? "partial" : "sent";
-    const { error } = await getDb().from("parlay_live_hit_runs").insert({
-      season: leagueConfig.season, week, finished_at: new Date().toISOString(),
-      status: result.errors.length || result.failed ? "partial" : result.attempted === 0 ? "idle" : "success",
-      eligible_picks: result.eligiblePicks, currently_hitting: result.currentlyHitting,
-      attempted: result.attempted, sent: result.sent, failed: result.failed,
-      skipped: result.skipped, errors: result.errors
-    });
-    if (error) result.errors.push(`Could not save live alert diagnostics: ${error.message}`);
-  }
-  result.note = args.dryRun
-    ? "READ ONLY. No web push sent, no graded results/payment values or delivery logs changed."
-    : "Provisional hit alerts only. Official Hit/Miss/Push and payments were not changed.";
+  result.status = result.failed || result.errors.length ? "partial" : "sent";
+  const { error } = await getDb().from("parlay_live_hit_runs").insert({
+    season: leagueConfig.season, week, finished_at: new Date().toISOString(),
+    status: result.failed || result.errors.length ? "partial" : result.attempted ? "success" : "idle",
+    eligible_picks: result.eligiblePicks, currently_hitting: result.currentlyHitting,
+    attempted: result.attempted, sent: result.sent, failed: result.failed,
+    skipped: result.skipped, errors: result.errors
+  });
+  if (error) result.errors.push(`Unable to log live alerts: ${error.message}`);
+  result.note = dead ? "Ticket dead: one league-wide loss alert and no further hit alerts." :
+    "League-wide hit alerts sent for verified threshold crossings. Official grades remain separate.";
   return result;
 }

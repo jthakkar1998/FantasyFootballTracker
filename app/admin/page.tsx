@@ -1,5 +1,7 @@
 import { leagueConfig } from "@/lib/config";
 import { listParlayHistory } from "@/lib/parlay-db";
+import { listOffAppLegs } from "@/lib/parlay-offapp";
+import type { ParlayTeamContext } from "@/lib/parlay-types";
 import { listParlayWeeklyTeamTracking } from "@/lib/parlay-tracking-db";
 import { makeParlayCommissionerRows } from "@/lib/parlay-admin";
 import { fetchLeagueSummary, teamDisplayName } from "@/lib/espn";
@@ -26,6 +28,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const obligations = databaseConfigured() ? await listObligations() : [];
   const parlayHistory = databaseConfigured() ? await listParlayHistory() : [];
   const tracking = databaseConfigured() ? await listParlayWeeklyTeamTracking(leagueConfig.season) : [];
+  let offapp: Awaited<ReturnType<typeof listOffAppLegs>> = [];
+  let offappUnavailable = false;
+  if (databaseConfigured()) {
+    try { offapp = await listOffAppLegs(leagueConfig.season); }
+    catch { offappUnavailable = true; }
+  }
   let snapshots: SnapshotRecord[] = [];
   let snapshotRuns: SnapshotRun[] = [];
   let snapshotsUnavailable = false;
@@ -45,7 +53,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     catch { diagnosticsUnavailable = true; }
   }
   const activePicks = parlayHistory.filter(pick => !pick.withdrawn_at);
-  let thisWeek: { week: number; teams: { teamId: number; teamName: string }[] } | null = null;
+  let thisWeek: { week: number; teams: ParlayTeamContext[] } | null = null;
   let roster: { teamId: number; teamName: string }[] = [];
   let currentWeek = 1;
   let rosterUnavailable = false;
@@ -106,19 +114,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
       <section id="parlay-management" className="section-block">
         <div className="section-heading"><div><span className="eyebrow">PARLAY COMMISSIONER</span><h2>Weekly bets & $1 payments</h2></div></div>
-        <p className="parlay-muted">Every fantasy team appears for every week of {leagueConfig.season}, starting with Week 1. Website picks are displayed automatically. For bets messaged to you instead, select <strong>Mark off-app pick</strong>, optionally record the bet, and verify the $1 when received. Grading and payment records are commissioner-only.</p>
+        <p className="parlay-muted">Website and confirmed off-app picks count toward the shared league ticket. Use <strong>Ticket details</strong> on an off-app row to verify its player and actual placed line. Reconcile every team, including No Bet Placed.</p>
+        {offappUnavailable ? <div className="notice error">Structured off-app ticket data unavailable. Run the league-ticket upgrade SQL before using this feature.</div> : null}
         {rosterUnavailable ? <div className="notice error">ESPN team list is temporarily unavailable. Showing known teams from saved records only; refresh when ESPN is available to see the full league.</div> : null}
         {thisWeek ? (
           <div className="card parlay-admin-status"><strong>Week {thisWeek.week} submission & notification status</strong><div className="parlay-admin-team-grid">
             {thisWeek.teams.map(team => {
               const submitted = currentPicks.some(p => p.team_id === team.teamId);
-              return <div key={team.teamId}><span>{team.teamName}</span><b>{submitted ? "✓ Pick submitted" : "○ No pick"}</b><small>{deviceCounts.get(team.teamId) ?? 0} phone(s) subscribed</small>
+              const outside = tracking.some(t => t.week === thisWeek?.week && t.team_id === team.teamId && t.submitted_outside_app);
+              const verifiedOutside = offapp.some(l => l.week === thisWeek?.week && l.team_id === team.teamId && l.confirmed);
+              return <div key={team.teamId}><span>{team.teamName}</span><b>{submitted ? "✓ Website pick" : outside ? verifiedOutside ? "✓ Off-app verified" : "⚠ Off-app details needed" : "○ No pick"}</b><small>{deviceCounts.get(team.teamId) ?? 0} phone(s) subscribed</small>
                 {(deviceCounts.get(team.teamId) ?? 0) > 0 ? <form action="/api/admin/parlay/test-push" method="post"><input type="hidden" name="teamId" value={team.teamId}/><button type="submit" className="button ghost">Send test push</button></form> : null}
               </div>;
             })}
           </div></div>
         ) : null}
-        <div className="card reminder-diagnostics">
+        <details className="commissioner-fold"><summary>Reminder delivery diagnostics</summary><div className="card reminder-diagnostics">
           <h3>Automated reminder diagnostics</h3>
           <p className="parlay-muted">Supabase Cron checks during Thursday–Saturday 8 PM, Sunday 9 AM, and Sunday 11:30 AM Central windows. Each slot is delivered once per eligible device, with up to three attempts for failures.</p>
           {diagnosticsUnavailable ? <p className="notice error">Reminder diagnostics aren't available yet. Check that the Supabase Cron migration was applied.</p> : reminderRuns.length === 0 ? <p className="parlay-muted">No reminder API runs recorded yet. After enabling Supabase Cron, scheduled runs will appear here.</p> : (
@@ -138,13 +149,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           )}
           <small className="parlay-muted">A successful cron request is not proof of phone delivery; “Sent” means the push provider accepted it. Check Supabase Integrations → Cron → History if no API runs appear.</small>
         </div>
+        </details>
+        <details className="commissioner-fold"><summary>Sunday line snapshots and history</summary>
         {snapshotsUnavailable ? <div className="notice error">FanDuel snapshots are unavailable. The Phase 1 database migration may not be installed yet.</div> :
           <ParlaySnapshotReport season={leagueConfig.season} currentWeek={currentWeek}
             picks={activePicks.filter(pick => pick.season === leagueConfig.season) as SnapshotPick[]}
             snapshots={snapshots} runs={snapshotRuns} />}
-        {!snapshotsUnavailable ? <ParlayLiveHitReport enabled={process.env.PARLAY_LIVE_HITS_ENABLED === "true"} /> : null}
+        </details>
+        <details className="commissioner-fold" open><summary>League-wide live alerts & ticket status</summary>
+        {!snapshotsUnavailable ? <ParlayLiveHitReport enabled={process.env.PARLAY_LIVE_HITS_ENABLED === "true" && process.env.PARLAY_LEAGUE_TICKET_NOTIFICATIONS_ENABLED === "true"} /> : null}
+        </details>
+        <details className="commissioner-fold"><summary>Automatic grading diagnostics</summary>
         {!snapshotsUnavailable ? <ParlayGradingReport currentWeek={currentWeek} snapshotWeeks={[...new Set(snapshots.map(record => record.week))]} writesEnabled={process.env.PARLAY_AUTO_GRADING_ENABLED === "true"} /> : null}
-        <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season} />
+        </details>
+        {thisWeek ? <div className="card parlay-admin-status">
+          <strong>Week {thisWeek.week} · Ticket reconciliation</strong>
+          <p className="parlay-muted">{currentPicks.length} website picks · {offapp.filter(l => l.week === thisWeek?.week && l.confirmed).length} verified off-app legs · {tracking.filter(t => t.week === thisWeek?.week && t.outside_result_status === "no_bet").length} No Bet Placed.
+            Unverified off-app bets or missing team decisions pause league-wide hit alerts.</p>
+        </div> : null}
+        <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season}
+          currentWeek={thisWeek?.week ?? null} eligibleByTeam={Object.fromEntries((thisWeek?.teams ?? []).map(t => [t.teamId, t.eligiblePlayers]))}
+          offappLegs={offapp} />
       </section>
 
       <div className="table-wrap card admin-table">

@@ -571,3 +571,17 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
   .grading-preview-controls .snapshot-week-select,
   .grading-preview-controls .button { width: 100%; flex-basis: 100%; }
 }
+
+/* Compact, accessible Commissioner controls for the league-ticket upgrade. */
+.commissioner-fold { margin: 12px 0; border: 1px solid var(--border, #394350); border-radius: 12px; overflow: hidden; }
+.commissioner-fold > summary { cursor: pointer; padding: 14px 18px; font-weight: 700; list-style: none; }
+.commissioner-fold > summary::before { content: "▸"; display: inline-block; margin-right: 10px; }
+.commissioner-fold[open] > summary::before { transform: rotate(90deg); }
+.commissioner-fold > .card { margin: 0; border: none; }
+.offapp-ticket-summary { display: grid; gap: 6px; margin: 8px 0; }
+.offapp-ticket-editor { padding: 12px; border: 1px solid var(--border, #394350); border-radius: 10px; min-width: 255px; }
+.offapp-ticket-editor .offapp-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.offapp-ticket-editor label { display: grid; gap: 4px; font-size: 12px; }
+.offapp-ticket-editor input, .offapp-ticket-editor select { min-width: 0; width: 100%; }
+.offapp-ticket-editor .offapp-wide { grid-column: 1 / -1; }
+@media(max-width:650px){.offapp-ticket-editor .offapp-fields{grid-template-columns:minmax(0,1fr)}}

@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ParlayCommissionerRow } from "@/lib/parlay-admin";
+import type { EligibleParlayPlayer } from "@/lib/parlay-types";
+import type { OffAppLeg } from "@/lib/parlay-offapp";
+import { OffAppTicketEditor } from "./OffAppTicketEditor";
 import {
   diffBet, exportBetsCsv, importBetsCsv, initialBet, needsPaymentFollowUp, results, rowKey,
   type BetUpdate, type EditableBet, type BetResult
@@ -14,7 +17,10 @@ function makeStartingDrafts(rows: ParlayCommissionerRow[]): Record<string, Edita
   return Object.fromEntries(rows.map(row => [rowKey(row.season, row.week, row.teamId), initialBet(row)]));
 }
 
-export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommissionerRow[]; season: number }) {
+export function CommissionerParlayManager({ rows, season, currentWeek, eligibleByTeam, offappLegs }: {
+  rows: ParlayCommissionerRow[]; season: number; currentWeek: number | null;
+  eligibleByTeam: Record<number, EligibleParlayPlayer[]>; offappLegs: OffAppLeg[];
+}) {
   const [baseline, setBaseline] = useState<Record<string, EditableBet>>(() => makeStartingDrafts(rows));
   const [drafts, setDrafts] = useState<Record<string, EditableBet>>(() => makeStartingDrafts(rows));
   const [saveStates, setSaveStates] = useState<Record<string, SaveStatus>>({});
@@ -23,6 +29,7 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
   const [busy, setBusy] = useState(false);
   const [weekFilter, setWeekFilter] = useState("all");
   const [teamFilter, setTeamFilter] = useState("");
+  const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const weekNumbers = useMemo(() => [...new Set(rows.map(row => row.week))].sort((a, b) => a - b), [rows]);
@@ -173,7 +180,7 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
           </button>
         </div>
       </div>
-      <p className="commissioner-bulk-instructions">Edit several rows or weeks without refreshing. <strong>Save all changes</strong> when ready. To record no wager, select <strong>No Bet Placed</strong> under Result; Venmo will show <strong>Not applicable</strong>. For Excel: use <code>source</code> (outside/none/website), <code>bet_details</code>, <code>result</code> (hit/miss/push/void/pending/<strong>no_bet</strong>), and <code>payment_received</code> (yes/no, or n/a for no_bet). A no_bet row needs <code>source=none</code> and empty bet details. CSV imports never save until you click Save all changes. Existing website picks cannot be marked no_bet.</p>
+      <p className="commissioner-bulk-instructions">For an off-app leg: first mark and save the row, then expand Ticket details and save its verified player, market, and exact wager line. Avoid editing free text afterward without re-verifying. Edit several rows or weeks without refreshing. <strong>Save all changes</strong> when ready. To record no wager, select <strong>No Bet Placed</strong> under Result; Venmo will show <strong>Not applicable</strong>. For Excel: use <code>source</code> (outside/none/website), <code>bet_details</code>, <code>result</code> (hit/miss/push/void/pending/<strong>no_bet</strong>), and <code>payment_received</code> (yes/no, or n/a for no_bet). A no_bet row needs <code>source=none</code> and empty bet details. CSV imports never save until you click Save all changes. Existing website picks cannot be marked no_bet.</p>
       <div className={`commissioner-save-banner ${message.startsWith("CSV not imported") || message.includes("failed") ? "is-error" : ""}`} role="status" aria-live="polite">
         {message || (unsavedCount ? `${unsavedCount} row(s) have unsaved changes.` : "All displayed changes are up to date. Saved rows turn green.")}
       </div>
@@ -198,6 +205,14 @@ export function CommissionerParlayManager({ rows, season }: { rows: ParlayCommis
                 {noBet ? <strong className="commissioner-no-bet-label">No bet placed</strong>
                   : draft.source === "outside" ? <strong className="parlay-offapp-label">Submitted outside the website</strong>
                   : <span className="parlay-no-website-pick">{pick?.withdrawn_at ? "Website pick withdrawn; no active pick" : "Did not submit a pick through the website"}</span>}
+                {!noBet && draft.source === "outside" ? <div className="offapp-ticket-summary">
+                  <button className="button ghost" type="button" onClick={() => setExpandedLeg(expandedLeg === key ? null : key)}>
+                    {expandedLeg === key ? "Hide ticket details" : "Ticket details ▾"}
+                  </button>
+                  <small>{offappLegs.find(l => l.week === row.week && l.team_id === row.teamId)?.confirmed ? "✓ Structured ticket leg" : "Needs verified ticket details"}</small>
+                  {expandedLeg === key ? <OffAppTicketEditor row={row} players={row.week === currentWeek ? eligibleByTeam[row.teamId] ?? [] : []}
+                    existing={offappLegs.find(l => l.week === row.week && l.team_id === row.teamId) ?? null} /> : null}
+                </div> : null}
                 {!noBet ? <input className="commissioner-bet-input" maxLength={400} value={draft.details} disabled={busy}
                   onChange={event => edit(key, { details: event.target.value, source: event.target.value.trim() ? "outside" : draft.source })}
                   placeholder="Enter off-app bet details..." aria-label={`Off-app bet details for ${row.teamName}, Week ${row.week}`}/> : null}

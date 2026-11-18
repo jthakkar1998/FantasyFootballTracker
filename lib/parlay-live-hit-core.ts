@@ -1,6 +1,6 @@
 import { chooseGradingSnapshot, type SnapshotRecord } from "./parlay-snapshot-core";
 import {
-  extractEspnNflMetric, gradeStat, isNflBoxscoreFinal, makeBaseGradeDecision,
+  extractEspnNflMetric, gradeStat, isNflBoxscoreFinal,
   type EspnNflSummary, type GradingPick
 } from "./parlay-grade-core";
 
@@ -26,7 +26,7 @@ export function chicagoLiveHitWindow(nowIso: string): { active: boolean; sundayD
   const part = (name: string) => parts.find(p => p.type === name)?.value ?? "";
   const day = `${part("year")}-${part("month")}-${part("day")}`;
   const hour = Number(part("hour"));
-  if (part("weekday") === "Sun" && hour >= 12) return { active: true, sundayDate: day };
+  if (part("weekday") === "Sun" && (hour > 8 || (hour === 8 && Number(part("minute")) >= 15))) return { active: true, sundayDate: day };
   if (part("weekday") === "Mon" && hour < 3) {
     const previous = new Date(`${day}T12:00:00Z`);
     previous.setUTCDate(previous.getUTCDate() - 1);
@@ -48,17 +48,30 @@ export function chicagoDate(iso: string): string {
 export function eligibleLiveHitPick(pick: LiveHitPick, snapshots: SnapshotRecord[]): {
   eligible: boolean; line: string | null; reason: string;
 } {
-  const preliminary = makeBaseGradeDecision(pick, snapshots);
-  if (preliminary.status !== "ready") return { eligible: false, line: null, reason: preliminary.reason };
   const chosen = chooseGradingSnapshot(pick, snapshots);
-  if (!chosen.selected || chosen.source !== "primary") return { eligible: false, line: null, reason: "No matching 11:56 primary snapshot." };
-  if (!Number.isInteger(pick.pro_team_id) || Number(pick.pro_team_id) <= 0) {
-    return { eligible: false, line: null, reason: "Missing verified NFL team ID (older picks are not retroactively alerted)." };
+  if (pick.withdrawn_at || pick.result_status === "miss" || pick.result_status === "void" ||
+      pick.grade_source === "manual" || pick.bookmaker.toLowerCase() !== "fanduel") {
+    return { eligible: false, line: null, reason: "Withdrawn, settled, manual, or non-FanDuel selection." };
   }
-  if (pick.side_id !== "over" && pick.side_id !== "under" && pick.side_id !== "yes" && pick.side_id !== "no") {
-    return { eligible: false, line: null, reason: "Unsupported sportsbook side." };
+  if (!chosen.selected) return { eligible: false, line: null, reason: "No matching verified pregame snapshot." };
+  const kickoff = new Date(pick.event_starts_at);
+  const local = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(kickoff);
+  const h = Number(local.find(p => p.type === "hour")?.value ?? -1);
+  const m = Number(local.find(p => p.type === "minute")?.value ?? -1);
+  const earlyGame = h < 11 || (h === 11 && m < 56);
+  if (chosen.source !== "primary" && !earlyGame) return {
+    eligible: false, line: null, reason: "Primary snapshot required for games starting after 11:56 AM Central." };
+  // Early games begin before the normal Sunday lock, so verified submission
+  // snapshots may safely participate without fabricating a lock flag.
+  if (pick.eligibility_at_lock === false || (pick.eligibility_at_lock !== true && !earlyGame)) {
+    return { eligible: false, line: null, reason: "Sunday starter eligibility has not been verified." };
   }
-  return { eligible: true, line: chosen.selected.line, reason: "Eligible Sunday pick with 11:56 primary snapshot." };
+  if (!Number.isInteger(pick.pro_team_id) || Number(pick.pro_team_id) <= 0) return {
+    eligible: false, line: null, reason: "Missing verified ESPN NFL team." };
+  if (!["over", "under", "yes", "no"].includes(pick.side_id)) return {
+    eligible: false, line: null, reason: "Unsupported prop side." };
+  return { eligible: true, line: chosen.selected.line, reason: `Verified pregame ${chosen.source} snapshot.` };
 }
 
 /** Live hit alerts are informational. Never write Hit/Miss/Push to the bet row here.
