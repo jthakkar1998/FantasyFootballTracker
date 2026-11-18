@@ -51,11 +51,14 @@ export function ParlaySnapshotReport({ season, currentWeek, picks, snapshots, ru
       <span><strong>{earlyCount}</strong> early pregame lines</span>
       <span><strong>{weekPicks.length - primaryCount - backupCount - earlyCount}</strong> need review / not yet captured</span>
     </div>
-    <div className="table-wrap">
+    {weekPicks.length === 0 ? (
+      <div className="snapshot-empty-state" role="status">
+        No active website-submitted picks for this week. Off-app ticket legs are tracked separately.
+      </div>
+    ) : <div className="table-wrap">
       <table className="snapshot-table">
         <thead><tr><th>Fantasy team</th><th>Submitted prop</th><th>8 AM / submission</th><th>11:45 backup</th><th>11:56 primary</th><th>Line for future grading</th></tr></thead>
-        <tbody>{weekPicks.length === 0 ? <tr><td colSpan={6}>No active website-submitted picks for this week. Off-app ticket legs are tracked separately.</td></tr> :
-          weekPicks.map(pick => {
+        <tbody>{weekPicks.map(pick => {
             const matching = weekSnapshots.filter(record => record.submission_id === pick.id &&
               record.event_id === pick.event_id && record.market_id === pick.market_id &&
               record.sportsbook_player_id === pick.sportsbook_player_id &&
@@ -79,7 +82,7 @@ export function ParlaySnapshotReport({ season, currentWeek, picks, snapshots, ru
             </tr>;
           })}</tbody>
       </table>
-    </div>
+    </div>}
     <details className="snapshot-run-details">
       <summary>Snapshot job activity ({weekRuns.length})</summary>
       <div className="table-wrap"><table><thead><tr><th>Run (Central)</th><th>Slot</th><th>Status</th><th>Attempted</th><th>Captured</th><th>Errors</th></tr></thead>
