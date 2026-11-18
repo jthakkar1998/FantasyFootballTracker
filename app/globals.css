@@ -396,14 +396,18 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .snapshot-summary { display: flex; gap: 9px; flex-wrap: wrap; margin: 16px 0; }
 .snapshot-summary span { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; color: var(--muted); font-size: 12px; }
 .snapshot-summary strong { color: var(--text); }
-.snapshot-table { min-width: 830px; table-layout: fixed; }
-.snapshot-table th, .snapshot-table td { padding: 13px 10px; font-size: 12px; overflow-wrap: anywhere; vertical-align: top; }
+/* Six columns must share 100% of the table width, including future grading. */
+.snapshot-table { width: 100%; min-width: 1020px; table-layout: fixed; }
+.snapshot-table th, .snapshot-table td { padding: 13px 10px; font-size: 12px; overflow-wrap: break-word; vertical-align: top; line-height: 1.45; }
 .snapshot-table td strong { display: block; font-weight: 750; }
 .snapshot-table td small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.4; }
-.snapshot-table th:first-child { width: 17%; }
-.snapshot-table th:nth-child(2) { width: 25%; }
-.snapshot-table th:nth-child(3), .snapshot-table th:nth-child(4) { width: 17%; }
-.snapshot-table th:nth-child(5) { width: 24%; }
+.snapshot-table th:nth-child(1) { width: 15%; }
+.snapshot-table th:nth-child(2) { width: 20%; }
+.snapshot-table th:nth-child(3) { width: 17%; }
+.snapshot-table th:nth-child(4) { width: 14%; }
+.snapshot-table th:nth-child(5) { width: 14%; }
+.snapshot-table th:nth-child(6) { width: 20%; }
+.snapshot-empty-state { margin: 14px 0 4px; padding: 18px 16px; background: rgba(154,165,181,.045); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .snapshot-muted { color: var(--muted); }
 .snapshot-tag { display: inline-block; font-size: 10px; font-weight: 750; padding: 3px 7px; border-radius: 7px; margin: 0 0 6px; border: 1px solid var(--line); }
 .snapshot-tag.primary { color: var(--success); border-color: rgba(88,214,141,.3); background: rgba(88,214,141,.08); }
