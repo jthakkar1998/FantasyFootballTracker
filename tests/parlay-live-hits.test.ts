@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  chicagoLiveHitWindow, eligibleLiveHitPick, evaluateLiveHit, liveHitNotificationCopy,
+  chicagoLiveHitWindow, eligibleLiveHitPick, inspectWebsiteLiveReadiness, evaluateLiveHit, liveHitNotificationCopy,
   type LiveHitPick
 } from "../lib/parlay-live-hit-core";
 import type { SnapshotRecord } from "../lib/parlay-snapshot-core";
@@ -91,6 +91,65 @@ test("missing athlete statistics and anytime-TD zero require review", () => {
     ] }] } };
   assert.equal(evaluateLiveHit(zero, tdYes, null).state, "review");
   assert.equal(evaluateLiveHit(zero, { ...tdYes, side_id: "no" }, null).state, "review");
+});
+
+test("missing in-game stats wait, rather than being mistaken for a loss or whole-ticket blocker", () => {
+  const absent: EspnNflSummary = {
+    header: { competitions: [{ status: { type: { completed: false } } }] },
+    boxscore: { players: [] }
+  };
+  assert.equal(evaluateLiveHit(absent, pick(), "5.5").state, "waiting");
+  assert.equal(evaluateLiveHit({ ...absent, header: { competitions: [{ status: { type: { completed: true } } }] } },
+    pick(), "5.5").state, "review");
+});
+
+test("Anytime TD explicitly waits for unreported or zero in-game touchdowns", () => {
+  const tdYes = pick({ stat_id: "touchdowns", side_id: "yes", line: null });
+  const inProgress: EspnNflSummary = { header: { competitions: [{ status: { type: { completed: false } } }] },
+    boxscore: { players: [] } };
+  const empty = evaluateLiveHit(inProgress, tdYes, null);
+  assert.equal(empty.state, "waiting");
+  assert.match(empty.reason, /waiting for a verified credited touchdown/i);
+  const zero = { ...inProgress, boxscore: { players: [{ statistics: [
+    { name: "rushing", labels: ["TD"], athletes: [{ athlete: { id: 123 }, stats: ["0"] }] },
+    { name: "receiving", labels: ["TD"], athletes: [{ athlete: { id: 123 }, stats: ["0"] }] }
+  ] }] } };
+  assert.equal(evaluateLiveHit(zero, tdYes, null).state, "waiting");
+  assert.equal(evaluateLiveHit({ ...zero, header: { competitions: [{ status: { type: { completed: true } } }] } },
+    tdYes, null).state, "review");
+  assert.equal(evaluateLiveHit(inProgress, { ...tdYes, side_id: "no" }, null).state, "waiting");
+});
+
+test("Anytime TD fires on first verified rushing OR receiving TD with the other category absent", () => {
+  const tdYes = pick({ stat_id: "touchdowns", side_id: "yes", line: null });
+  const summary = (name: string, id: number, value: string): EspnNflSummary => ({
+    header: { competitions: [{ status: { type: { completed: false } } }] },
+    boxscore: { players: [{ statistics: [
+      { name, labels: ["TD"], athletes: [{ athlete: { id }, stats: [value] }] }
+    ] }] }
+  });
+  assert.equal(evaluateLiveHit(summary("rushing", 123, "1"), tdYes, null).state, "hit");
+  assert.equal(evaluateLiveHit(summary("receiving", 123, "1"), tdYes, null).state, "hit");
+  assert.equal(evaluateLiveHit(summary("kickReturns", 123, "1"), tdYes, null).state, "hit");
+  assert.equal(evaluateLiveHit(summary("puntReturns", 123, "1"), tdYes, null).state, "hit");
+  assert.equal(evaluateLiveHit(summary("defensive", 123, "1"), tdYes, null).state, "hit");
+  assert.equal(evaluateLiveHit(summary("receiving", 999, "1"), tdYes, null).state, "waiting");
+  assert.equal(evaluateLiveHit(summary("passing", 123, "1"), tdYes, null).state, "waiting");
+});
+
+test("readiness distinguishes a pending Sunday lock from a real failed eligibility check", () => {
+  const locked = pick();
+  const primary = snapshot();
+  const during = "2026-11-15T17:58:00Z"; // 11:58 AM Central
+  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary], during).status, "pending");
+  assert.match(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary], during).reason,
+    /parlay-lock Cron/i);
+  assert.equal(inspectWebsiteLiveReadiness(locked, [primary], during).status, "verified");
+  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: false }, [primary], during).status, "attention");
+  assert.equal(inspectWebsiteLiveReadiness(locked, [], during).status, "pending");
+  assert.equal(inspectWebsiteLiveReadiness(locked, [], "2026-11-15T18:01:00Z").status, "attention");
+  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary],
+    "2026-11-15T18:01:00Z").status, "attention");
 });
 
 test("push copy explicitly warns live stats are provisional", () => {

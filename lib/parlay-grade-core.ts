@@ -85,20 +85,42 @@ export function extractEspnNflMetric(summary: EspnNflSummary, playerId: number, 
     fieldGoals_made: ["kicking", ["FG", "FG-FGA", "fieldGoalsMadeAttempts"], true],
     extraPoints_kicksMade: ["kicking", ["XP", "XP-XPA", "extraPointsMadeAttempts"], true]
   };
-  if (statId === "touchdowns" || statId === "rushing+receiving_yards") {
-    const suffix = statId === "touchdowns" ? "touchdowns" : "yards";
-    const rushing = read("rushing", suffix === "touchdowns" ? ["TD", "rushingTouchdowns"] : ["YDS", "rushingYards"]);
-    const receiving = read("receiving", suffix === "touchdowns" ? ["TD", "receivingTouchdowns"] : ["YDS", "receivingYards"]);
-    if (rushing === null && receiving === null) return { value: null, reason: "Neither rushing nor receiving statistics were reported for this athlete." };
-    // ESPN may omit a stat category when the player has zero opportunities.
-    // A positive stat in the other category is still reliable for an anytime-TD hit.
-    if (rushing === null || receiving === null) {
-      if (statId === "touchdowns" && (rushing ?? receiving ?? 0) >= 1) {
-        return { value: rushing ?? receiving, reason: null, possibleOtherTouchdowns: true };
-      }
-      return { value: null, reason: "One component is absent; cannot assume it was zero." };
-    }
-    return { value: rushing + receiving, reason: null, possibleOtherTouchdowns: statId === "touchdowns" };
+  if (statId === "touchdowns") {
+    // ESPN can omit an athlete's rushing/receiving row entirely until a play is
+    // recorded. Never interpret an absent row as zero or a losing Anytime TD.
+    // A POSITIVE, athlete-ID-matched scoring statistic is reliable evidence of
+    // a TD for live Yes alerts, even when another category is absent.
+    const rushing = read("rushing", ["TD", "rushingTouchdowns"]);
+    const receiving = read("receiving", ["TD", "receivingTouchdowns"]);
+    // Some Anytime TDs are returns rather than rushes/receptions. Only use
+    // explicit positive TD columns for the same athlete; a scoring-play
+    // participant alone may be the passer or another non-scoring player.
+    const otherPositive = [
+      read("kickReturns", ["TD", "kickReturnTouchdowns"]),
+      read("puntReturns", ["TD", "puntReturnTouchdowns"]),
+      read("defensive", ["TD", "defensiveTouchdowns"]),
+      read("interceptions", ["TD", "interceptionTouchdowns"])
+    ].some(value => value !== null && value > 0);
+    if (otherPositive) return { value: Math.max(1, (rushing ?? 0) + (receiving ?? 0)),
+      reason: null, possibleOtherTouchdowns: true };
+    if ((rushing ?? 0) + (receiving ?? 0) > 0) return {
+      value: (rushing ?? 0) + (receiving ?? 0), reason: null, possibleOtherTouchdowns: true
+    };
+    // In-progress: wait for an explicit positive ESPN score. At final: do not
+    // assume No / Miss because return/fumble TDs and DNP/voids can differ.
+    return { value: null, reason: "No verified credited touchdown reported yet; ESPN may omit zero-stat rows. Never treat this as a loss.",
+      possibleOtherTouchdowns: true };
+  }
+  if (statId === "rushing+receiving_yards") {
+    const rushing = read("rushing", ["YDS", "rushingYards"]);
+    const receiving = read("receiving", ["YDS", "receivingYards"]);
+    if (rushing === null && receiving === null) return {
+      value: null, reason: "Neither rushing nor receiving statistics were reported for this athlete."
+    };
+    if (rushing === null || receiving === null) return {
+      value: null, reason: "One component is absent; cannot assume it was zero."
+    };
+    return { value: rushing + receiving, reason: null };
   }
   if (statId === "kicking_totalPoints") {
     const fg = read("kicking", ["FG", "FG-FGA"], true);

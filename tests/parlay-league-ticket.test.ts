@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy } from "../lib/parlay-ticket-core";
+import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy, leagueHitAlertGate } from "../lib/parlay-ticket-core";
 import { chooseGradingSnapshot, snapshotSlotForInstant, type SnapshotPick, type SnapshotRecord } from "../lib/parlay-snapshot-core";
 import { chicagoLiveHitWindow } from "../lib/parlay-live-hit-core";
 import { validateOffAppInput } from "../lib/parlay-offapp-validation";
@@ -98,4 +98,33 @@ test("new database patch protects all broadcast tables and preserves prior sched
   const early=fs.readFileSync("supabase/parlay-early-snapshot-enable.sql","utf8");
   assert.match(early,/ffball-parlay-snapshot-early/);
   assert.doesNotMatch(early,/SELECT cron\.unschedule/);
+});
+
+
+test("absent ESPN stats on one leg do not block an independently verified hit", () => {
+  const gate = leagueHitAlertGate({ unresolvedSelections: [], pendingPregameChecks: [],
+    liveStatWarnings: ["Bucky: not yet reported"] });
+  assert.equal(gate.canSendHits, true);
+  const summary = { header: { competitions: [{ status: { type: { completed: false } } }] },
+    boxscore: { players: [{ statistics: [{ name: "passing", labels: ["TD"],
+      athletes: [{ athlete: { id: 99 }, stats: ["2"] }] }] }] } };
+  const hit = evaluateTicketLeg(summary, { espnPlayerId: 99, statId: "passing_touchdowns", side: "over", line: "1.5" });
+  assert.equal(hit.state, "hit");
+  assert.equal(leagueHitAlertGate({ unresolvedSelections: ["Unreconciled Team 10"],
+    pendingPregameChecks: [], liveStatWarnings: [] }).canSendHits, false);
+  assert.equal(leagueHitAlertGate({ unresolvedSelections: [],
+    pendingPregameChecks: ["Awaiting recorded lock"], liveStatWarnings: [] }).canSendHits, false);
+});
+
+test("in-game touchdown bets wait without falsely declaring a MISS or DEAD", () => {
+  const unreported = { header: { competitions: [{ status: { type: { completed: false } } }] },
+    boxscore: { players: [] } };
+  const leg = { espnPlayerId: 99, statId: "touchdowns", side: "yes", line: null };
+  assert.equal(evaluateTicketLeg(unreported, leg).state, "waiting");
+  const reported = { ...unreported, boxscore: { players: [{ statistics: [
+    { name: "receiving", labels: ["TD"], athletes: [{ athlete: { id: 99 }, stats: ["1"] }] }
+  ] }] } };
+  assert.equal(evaluateTicketLeg(reported, leg).state, "hit");
+  const finalUnreported = { ...unreported, header: { competitions: [{ status: { type: { completed: true } } }] } };
+  assert.equal(evaluateTicketLeg(finalUnreported, leg).state, "review");
 });
