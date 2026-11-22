@@ -74,6 +74,45 @@ export function eligibleLiveHitPick(pick: LiveHitPick, snapshots: SnapshotRecord
   return { eligible: true, line: chosen.selected.line, reason: `Verified pregame ${chosen.source} snapshot.` };
 }
 
+/** Read-only, pre-kickoff status for the commissioner. A missing scheduled
+ * lock/snapshot is PENDING, not proof the player is ineligible. Neither this
+ * check nor the preview writes eligibility_at_lock or guesses the lineup. */
+export function inspectWebsiteLiveReadiness(pick: LiveHitPick, snapshots: SnapshotRecord[], nowIso: string): {
+  status: "verified" | "pending" | "attention"; line: string | null; reason: string;
+} {
+  const selected = chooseGradingSnapshot(pick, snapshots);
+  const check = eligibleLiveHitPick(pick, snapshots);
+  if (check.eligible) return { status: "verified", line: check.line, reason: check.reason };
+
+  if (pick.withdrawn_at || pick.result_status === "miss" || pick.result_status === "void" ||
+      pick.grade_source === "manual" || pick.bookmaker.toLowerCase() !== "fanduel") {
+    return { status: "attention", line: null, reason: check.reason };
+  }
+  if (pick.eligibility_at_lock === false) {
+    return { status: "attention", line: null, reason: "Player failed the recorded Sunday lineup-lock check." };
+  }
+  const kickoff = Date.parse(pick.event_starts_at);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(kickoff) || !Number.isFinite(now)) {
+    return { status: "attention", line: null, reason: "Kickoff time could not be verified." };
+  }
+  if (check.reason === "Sunday starter eligibility has not been verified.") {
+    return { status: now < kickoff ? "pending" : "attention",
+      line: selected.selected?.line ?? null,
+      reason: now < kickoff
+        ? "Awaiting recorded 11:55 AM CT opponent-starter lock. If still pending after 11:55, inspect the existing Vercel parlay-lock Cron; readiness is not assumed."
+        : "Sunday lineup-lock verification was never recorded before kickoff; cannot safely mark this leg ready." };
+  }
+  if (check.reason === "No matching verified pregame snapshot." ||
+      check.reason === "Primary snapshot required for games starting after 11:56 AM Central.") {
+    return { status: now < kickoff ? "pending" : "attention", line: selected.selected?.line ?? null,
+      reason: now < kickoff
+        ? "Awaiting verified pregame FanDuel snapshot (11:56 primary/retries for afternoon games)."
+        : "No eligible pregame FanDuel snapshot was captured before kickoff." };
+  }
+  return { status: "attention", line: null, reason: check.reason };
+}
+
 /** Live hit alerts are informational. Never write Hit/Miss/Push to the bet row here.
  * Unders and No picks cannot win before the game is officially final.
  * Missing statistics are never treated as zero (DNP/void cases need review). */
@@ -81,7 +120,11 @@ export function evaluateLiveHit(summary: EspnNflSummary, pick: LiveHitPick, line
   const final = isNflBoxscoreFinal(summary);
   const metric = extractEspnNflMetric(summary, pick.espn_player_id, pick.stat_id);
   if (metric.value === null) {
-    return { state: "review", actualValue: null, final, reason: metric.reason ?? "NFL player statistics unavailable." };
+    return { state: final ? "review" : "waiting", actualValue: null, final,
+      reason: final ? `${metric.reason ?? "NFL player statistics unavailable."} Final settlement requires review.`
+        : pick.stat_id === "touchdowns"
+          ? "Anytime TD: waiting for a verified credited touchdown. No reported TD is not a loss."
+          : `Awaiting ESPN live statistic; not assumed zero. ${metric.reason ?? ""}`.trim() };
   }
   const comparison = gradeStat({ statId: pick.stat_id, side: pick.side_id, line, value: metric.value,
     possibleOtherTouchdowns: metric.possibleOtherTouchdowns });

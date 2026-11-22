@@ -1,0 +1,554 @@
+--- a/lib/parlay-grade-core.ts
++++ b/lib/parlay-grade-core.ts
+@@ -84,22 +84,44 @@
+     receiving_longestReception: ["receiving", ["LNG", "longReception"]],
+     fieldGoals_made: ["kicking", ["FG", "FG-FGA", "fieldGoalsMadeAttempts"], true],
+     extraPoints_kicksMade: ["kicking", ["XP", "XP-XPA", "extraPointsMadeAttempts"], true]
+   };
+-  if (statId === "touchdowns" || statId === "rushing+receiving_yards") {
+-    const suffix = statId === "touchdowns" ? "touchdowns" : "yards";
+-    const rushing = read("rushing", suffix === "touchdowns" ? ["TD", "rushingTouchdowns"] : ["YDS", "rushingYards"]);
+-    const receiving = read("receiving", suffix === "touchdowns" ? ["TD", "receivingTouchdowns"] : ["YDS", "receivingYards"]);
+-    if (rushing === null && receiving === null) return { value: null, reason: "Neither rushing nor receiving statistics were reported for this athlete." };
+-    // ESPN may omit a stat category when the player has zero opportunities.
+-    // A positive stat in the other category is still reliable for an anytime-TD hit.
+-    if (rushing === null || receiving === null) {
+-      if (statId === "touchdowns" && (rushing ?? receiving ?? 0) >= 1) {
+-        return { value: rushing ?? receiving, reason: null, possibleOtherTouchdowns: true };
+-      }
+-      return { value: null, reason: "One component is absent; cannot assume it was zero." };
+-    }
+-    return { value: rushing + receiving, reason: null, possibleOtherTouchdowns: statId === "touchdowns" };
++  if (statId === "touchdowns") {
++    // ESPN can omit an athlete's rushing/receiving row entirely until a play is
++    // recorded. Never interpret an absent row as zero or a losing Anytime TD.
++    // A POSITIVE, athlete-ID-matched scoring statistic is reliable evidence of
++    // a TD for live Yes alerts, even when another category is absent.
++    const rushing = read("rushing", ["TD", "rushingTouchdowns"]);
++    const receiving = read("receiving", ["TD", "receivingTouchdowns"]);
++    // Some Anytime TDs are returns rather than rushes/receptions. Only use
++    // explicit positive TD columns for the same athlete; a scoring-play
++    // participant alone may be the passer or another non-scoring player.
++    const otherPositive = [
++      read("kickReturns", ["TD", "kickReturnTouchdowns"]),
++      read("puntReturns", ["TD", "puntReturnTouchdowns"]),
++      read("defensive", ["TD", "defensiveTouchdowns"]),
++      read("interceptions", ["TD", "interceptionTouchdowns"])
++    ].some(value => value !== null && value > 0);
++    if (otherPositive) return { value: Math.max(1, (rushing ?? 0) + (receiving ?? 0)),
++      reason: null, possibleOtherTouchdowns: true };
++    if ((rushing ?? 0) + (receiving ?? 0) > 0) return {
++      value: (rushing ?? 0) + (receiving ?? 0), reason: null, possibleOtherTouchdowns: true
++    };
++    // In-progress: wait for an explicit positive ESPN score. At final: do not
++    // assume No / Miss because return/fumble TDs and DNP/voids can differ.
++    return { value: null, reason: "No verified credited touchdown reported yet; ESPN may omit zero-stat rows. Never treat this as a loss.",
++      possibleOtherTouchdowns: true };
++  }
++  if (statId === "rushing+receiving_yards") {
++    const rushing = read("rushing", ["YDS", "rushingYards"]);
++    const receiving = read("receiving", ["YDS", "receivingYards"]);
++    if (rushing === null && receiving === null) return {
++      value: null, reason: "Neither rushing nor receiving statistics were reported for this athlete."
++    };
++    if (rushing === null || receiving === null) return {
++      value: null, reason: "One component is absent; cannot assume it was zero."
++    };
++    return { value: rushing + receiving, reason: null };
+   }
+   if (statId === "kicking_totalPoints") {
+     const fg = read("kicking", ["FG", "FG-FGA"], true);
+     const xp = read("kicking", ["XP", "XP-XPA"], true);
+--- a/lib/parlay-live-hit-core.ts
++++ b/lib/parlay-live-hit-core.ts
+@@ -73,16 +73,59 @@
+     eligible: false, line: null, reason: "Unsupported prop side." };
+   return { eligible: true, line: chosen.selected.line, reason: `Verified pregame ${chosen.source} snapshot.` };
+ }
+ 
++/** Read-only, pre-kickoff status for the commissioner. A missing scheduled
++ * lock/snapshot is PENDING, not proof the player is ineligible. Neither this
++ * check nor the preview writes eligibility_at_lock or guesses the lineup. */
++export function inspectWebsiteLiveReadiness(pick: LiveHitPick, snapshots: SnapshotRecord[], nowIso: string): {
++  status: "verified" | "pending" | "attention"; line: string | null; reason: string;
++} {
++  const selected = chooseGradingSnapshot(pick, snapshots);
++  const check = eligibleLiveHitPick(pick, snapshots);
++  if (check.eligible) return { status: "verified", line: check.line, reason: check.reason };
++
++  if (pick.withdrawn_at || pick.result_status === "miss" || pick.result_status === "void" ||
++      pick.grade_source === "manual" || pick.bookmaker.toLowerCase() !== "fanduel") {
++    return { status: "attention", line: null, reason: check.reason };
++  }
++  if (pick.eligibility_at_lock === false) {
++    return { status: "attention", line: null, reason: "Player failed the recorded Sunday lineup-lock check." };
++  }
++  const kickoff = Date.parse(pick.event_starts_at);
++  const now = Date.parse(nowIso);
++  if (!Number.isFinite(kickoff) || !Number.isFinite(now)) {
++    return { status: "attention", line: null, reason: "Kickoff time could not be verified." };
++  }
++  if (check.reason === "Sunday starter eligibility has not been verified.") {
++    return { status: now < kickoff ? "pending" : "attention",
++      line: selected.selected?.line ?? null,
++      reason: now < kickoff
++        ? "Awaiting recorded 11:55 AM CT opponent-starter lock. If still pending after 11:55, inspect the existing Vercel parlay-lock Cron; readiness is not assumed."
++        : "Sunday lineup-lock verification was never recorded before kickoff; cannot safely mark this leg ready." };
++  }
++  if (check.reason === "No matching verified pregame snapshot." ||
++      check.reason === "Primary snapshot required for games starting after 11:56 AM Central.") {
++    return { status: now < kickoff ? "pending" : "attention", line: selected.selected?.line ?? null,
++      reason: now < kickoff
++        ? "Awaiting verified pregame FanDuel snapshot (11:56 primary/retries for afternoon games)."
++        : "No eligible pregame FanDuel snapshot was captured before kickoff." };
++  }
++  return { status: "attention", line: null, reason: check.reason };
++}
++
+ /** Live hit alerts are informational. Never write Hit/Miss/Push to the bet row here.
+  * Unders and No picks cannot win before the game is officially final.
+  * Missing statistics are never treated as zero (DNP/void cases need review). */
+ export function evaluateLiveHit(summary: EspnNflSummary, pick: LiveHitPick, line: string | null): LiveHitVerdict {
+   const final = isNflBoxscoreFinal(summary);
+   const metric = extractEspnNflMetric(summary, pick.espn_player_id, pick.stat_id);
+   if (metric.value === null) {
+-    return { state: "review", actualValue: null, final, reason: metric.reason ?? "NFL player statistics unavailable." };
++    return { state: final ? "review" : "waiting", actualValue: null, final,
++      reason: final ? `${metric.reason ?? "NFL player statistics unavailable."} Final settlement requires review.`
++        : pick.stat_id === "touchdowns"
++          ? "Anytime TD: waiting for a verified credited touchdown. No reported TD is not a loss."
++          : `Awaiting ESPN live statistic; not assumed zero. ${metric.reason ?? ""}`.trim() };
+   }
+   const comparison = gradeStat({ statId: pick.stat_id, side: pick.side_id, line, value: metric.value,
+     possibleOtherTouchdowns: metric.possibleOtherTouchdowns });
+   if (!comparison.result) return { state: "review", actualValue: metric.value, final, reason: comparison.reason };
+--- a/lib/parlay-live-hits.ts
++++ b/lib/parlay-live-hits.ts
+@@ -7,10 +7,10 @@
+ import { listOffAppLegs } from "./parlay-offapp";
+ import { listSnapshots } from "./parlay-snapshot-db";
+ import { getDb } from "./supabase";
+ import { sendWebPush, webPushConfigured, type BrowserPushSubscription } from "./web-push";
+-import { chicagoDate, chicagoLiveHitWindow, eligibleLiveHitPick, type LiveHitPick } from "./parlay-live-hit-core";
+-import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy, deadBroadcastCopy, type TicketLeg } from "./parlay-ticket-core";
++import { chicagoLiveHitWindow, inspectWebsiteLiveReadiness, type LiveHitPick } from "./parlay-live-hit-core";
++import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy, deadBroadcastCopy, leagueHitAlertGate, type TicketLeg } from "./parlay-ticket-core";
+ import type { EspnNflSummary } from "./parlay-grade-core";
+ import type { NflEvent } from "./types";
+ 
+ const ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary";
+@@ -20,18 +20,27 @@
+ interface TicketDelivery { alert_key: string; subscription_id: string; status: string; attempt_count: number }
+ interface TicketState { status: "alive" | "dead"; dead_alert_key: string | null; dead_reason: string | null }
+ export interface LiveHitPreviewRow {
+   team: string; player: string; statId: string; side: string; line: string | null;
+-  actualValue: number | null; gameFinal: boolean;
++  actualValue: number | null; gameFinal: boolean; gameStarted: boolean;
+   status: "hit" | "miss" | "waiting" | "review";
+   reason: string; source: "website" | "offapp";
++  readiness: "verified" | "pending" | "attention";
++  readinessReason: string;
+ }
+ export interface LiveHitRunResult {
+   status: "disabled" | "no_window" | "empty" | "preview" | "sent" | "partial";
+   season: number; week: number | null; eligiblePicks: number; currentlyHitting: number;
+   registeredDevices: number; attempted: number; sent: number; failed: number; skipped: number;
+   ticketStatus: "alive" | "dead" | "needs_verification" | "unknown";
++  /** Structural/identity/snapshot problems block the entire ticket. */
+   unresolved: string[]; noBetCount: number;
++  /** Scheduled lock/snapshot still outstanding: not automatically ineligible. */
++  pendingChecks: string[];
++  /** Live statistics only: never block an independent, verified hit. */
++  liveStatWarnings: string[];
++  readiness: "ready" | "pending" | "attention" | "dead" | "unknown";
++  verifiedLegs: number;
+   rows: LiveHitPreviewRow[]; errors: string[]; note: string;
+ }
+ 
+ async function nflSummary(eventId: string): Promise<EspnNflSummary> {
+@@ -76,9 +85,10 @@
+   const result: LiveHitRunResult = {
+     status: args.dryRun ? "preview" : "sent", season: leagueConfig.season, week: null,
+     eligiblePicks: 0, currentlyHitting: 0, registeredDevices: 0,
+     attempted: 0, sent: 0, failed: 0, skipped: 0, ticketStatus: "unknown",
+-    unresolved: [], noBetCount: 0, rows: [], errors: [], note: ""
++    unresolved: [], pendingChecks: [], liveStatWarnings: [], noBetCount: 0,
++    readiness: "unknown", verifiedLegs: 0, rows: [], errors: [], note: ""
+   };
+   if (!args.dryRun && (process.env.PARLAY_LIVE_HITS_ENABLED !== "true" ||
+       process.env.PARLAY_LEAGUE_TICKET_NOTIFICATIONS_ENABLED !== "true")) {
+     return { ...result, status: "disabled", note: "League-wide live notifications are disabled until the new migration and verification are complete." };
+@@ -132,17 +142,40 @@
+   const hits: Array<{ leg: TicketLeg; key: string; actual: number; final: boolean }> = [];
+   if (!dead) {
+     const events = await fetchNflWeekEvents(week);
+     const eventByLeg = new Map<string,NflEvent>();
++    const checkByLeg = new Map<string,string>();
+     for (const leg of ticket.legs) {
+       if (leg.source === "website") {
+-        const check = eligibleLiveHitPick(leg.websitePick as LiveHitPick, snapshots);
+-        if (!check.eligible) { result.unresolved.push(`${leg.teamName}: ${check.reason}`); continue; }
++        const check = inspectWebsiteLiveReadiness(leg.websitePick as LiveHitPick, snapshots, nowIso);
++        if (check.status !== "verified") {
++          const issue = `${leg.teamName}: ${check.reason}`;
++          if (check.status === "pending") result.pendingChecks.push(issue);
++          else result.unresolved.push(issue);
++          result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
++            side: leg.side, line: check.line, actualValue: null, gameFinal: false,
++            gameStarted: Date.parse(leg.eventStartsAt) <= Date.parse(nowIso),
++            status: check.status === "pending" ? "waiting" : "review", source: leg.source,
++            reason: check.reason, readiness: check.status, readinessReason: check.reason });
++          continue;
++        }
+         leg.line = check.line;
++        checkByLeg.set(leg.key, check.reason);
++      } else {
++        checkByLeg.set(leg.key, "Commissioner-confirmed structured off-app wager.");
+       }
+       const event = matchingNflGame(events, leg);
+-      if (!event) { result.unresolved.push(`${leg.teamName}: could not uniquely verify the player's NFL game.`); continue; }
++      if (!event) {
++        const reason = "Could not uniquely verify the player's NFL game and kickoff time.";
++        result.unresolved.push(`${leg.teamName}: ${reason}`);
++        result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
++          side: leg.side, line: leg.line, actualValue: null, gameFinal: false,
++          gameStarted: false, status: "review", source: leg.source, reason,
++          readiness: "attention", readinessReason: reason });
++        continue;
++      }
+       eventByLeg.set(leg.key, event);
++      result.verifiedLegs++;
+     }
+     const started = [...new Set([...eventByLeg.values()].filter(event => Date.parse(event.date) <= Date.parse(nowIso)).map(e => e.id))];
+     const summaries = new Map<string,EspnNflSummary | Error>();
+     for (let offset=0; offset<started.length; offset+=4) {
+@@ -154,36 +187,44 @@
+     for (const leg of ticket.legs) {
+       const event = eventByLeg.get(leg.key); if (!event) continue;
+       if (Date.parse(event.date) > Date.parse(nowIso)) {
+         result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId, side: leg.side,
+-          line: leg.line, actualValue: null, gameFinal: false, status: "waiting", source: leg.source, reason: "Game not started." });
++          line: leg.line, actualValue: null, gameFinal: false, gameStarted: false,
++          status: "waiting", source: leg.source, reason: "Awaiting kickoff; live NFL statistics are not required yet.",
++          readiness: "verified", readinessReason: `${checkByLeg.get(leg.key)} NFL game and kickoff confirmed.` });
+         continue;
+       }
+       const summary = summaries.get(event.id);
+       if (!summary || summary instanceof Error) {
+         const reason = summary instanceof Error ? summary.message : "NFL box score unavailable.";
+-        result.errors.push(`${leg.teamName}: ${reason}`);
+-        result.unresolved.push(`${leg.teamName}: ${reason}`);
++        result.liveStatWarnings.push(`${leg.teamName}: ${reason}`);
+         result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
+-          side: leg.side, line: leg.line, actualValue: null, gameFinal: false, status: "review", reason, source: leg.source });
++          side: leg.side, line: leg.line, actualValue: null, gameFinal: false,
++          gameStarted: true, status: "review", reason, source: leg.source,
++          readiness: "verified", readinessReason: `${checkByLeg.get(leg.key)} NFL game and kickoff confirmed.` });
+         continue;
+       }
+       const verdict = evaluateTicketLeg(summary, leg);
+       result.rows.push({ team: leg.teamName, player: leg.playerName, statId: leg.statId,
+         side: leg.side, line: leg.line, actualValue: verdict.actualValue,
+-        gameFinal: verdict.final, status: verdict.state, reason: verdict.reason, source: leg.source });
++        gameFinal: verdict.final, gameStarted: true, status: verdict.state, reason: verdict.reason, source: leg.source,
++        readiness: "verified", readinessReason: `${checkByLeg.get(leg.key)} NFL game and kickoff confirmed.` });
+       if (verdict.state === "miss") {
+         dead = { key: `dead:${leg.key}`, teamId: leg.teamId,
+           ...deadBroadcastCopy(leg.teamName, leg.playerName, `${leg.side.toUpperCase()} ${leg.line ?? ""} ${leg.statId} (final NFL stat ${verdict.actualValue})`) };
+         break;
+       }
+-      if (verdict.state === "review") result.unresolved.push(`${leg.teamName}: ${verdict.reason}`);
++      if (verdict.state === "review") result.liveStatWarnings.push(`${leg.teamName}: ${verdict.reason}`);
+       if (verdict.state === "hit" && verdict.actualValue !== null && leg.allowLiveHit)
+         hits.push({ leg, key: `hit:${leg.key}`, actual: verdict.actualValue, final: verdict.final });
+     }
+   }
+ 
+   result.currentlyHitting = hits.length;
++  const gate = leagueHitAlertGate({ unresolvedSelections: result.unresolved,
++    pendingPregameChecks: result.pendingChecks, liveStatWarnings: result.liveStatWarnings });
++  result.readiness = dead ? "dead" : result.unresolved.length ? "attention" :
++    result.pendingChecks.length ? "pending" : "ready";
+   if (dead) {
+     result.ticketStatus = "dead";
+     // First definitive miss permanently seals this week's league ticket.
+     if (!args.dryRun && state?.status !== "dead") {
+@@ -195,16 +236,16 @@
+         dead = { key: String(data ?? ""), teamId: 0, title: "League parlay is DEAD!",
+           body: "A verified losing leg ended the league ticket. No more hit alerts this week." };
+       }
+     }
+-  } else if (result.unresolved.length) result.ticketStatus = "needs_verification";
++  } else if (!gate.canSendHits) result.ticketStatus = "needs_verification";
+   else result.ticketStatus = "alive";
+   if (args.dryRun) {
+-    result.note = "READ ONLY: no league-wide pushes, grades, payments, or ticket status updated.";
++    result.note = `READ ONLY: ${gate.reason} No pushes, grades, payments, or ticket status updated.`;
+     return result;
+   }
+   if (result.ticketStatus === "needs_verification") {
+-    result.note = "League hits paused: reconcile missing/off-app picks or uncertain player/game data first.";
++    result.note = gate.reason;
+     return result;
+   }
+   const alerts = dead ? [dead] : hits.map(h => ({ key: h.key, teamId: h.leg.teamId,
+     ...hitBroadcastCopy(h.leg, h.actual, h.final) }));
+--- a/lib/parlay-ticket-core.ts
++++ b/lib/parlay-ticket-core.ts
+@@ -94,9 +94,16 @@
+ };
+ export function evaluateTicketLeg(summary: EspnNflSummary, leg: Pick<TicketLeg, "statId" | "side" | "line" | "espnPlayerId">): TicketVerdict {
+   const final = isNflBoxscoreFinal(summary);
+   const metric = extractEspnNflMetric(summary, leg.espnPlayerId, leg.statId);
+-  if (metric.value === null) return { state: "review", final, actualValue: null, reason: metric.reason ?? "Statistic unavailable" };
++  if (metric.value === null) return {
++    state: final ? "review" : "waiting", final, actualValue: null,
++    reason: final
++      ? `${metric.reason ?? "Statistic unavailable"} Final settlement requires review.`
++      : leg.statId === "touchdowns"
++        ? "Anytime TD: waiting for a verified credited touchdown (rushing, receiving or documented return). No reported TD is not a loss."
++        : `Awaiting ESPN live statistic; not assumed zero. ${metric.reason ?? ""}`.trim()
++  };
+   const compared = gradeStat({ statId: leg.statId, side: leg.side, line: leg.line,
+     value: metric.value, possibleOtherTouchdowns: metric.possibleOtherTouchdowns });
+   if (!compared.result) return { state: "review", final, actualValue: metric.value, reason: compared.reason };
+   if (compared.result === "miss") return { state: final ? "miss" : "waiting", final, actualValue: metric.value,
+@@ -115,4 +122,21 @@
+ }
+ export function deadBroadcastCopy(teamName: string, player: string, description: string) {
+   return { title: "League parlay is DEAD!", body: `${teamName}'s leg missed: ${player} — ${description}. No more hit alerts this week. Final settlement may require review.` };
+ }
++
++/** Absent live box-score data must not suppress another *verified* hit.
++ * Missing/conflicting teams, unverified selections, kicks and snapshots still
++ * block positive broadcasts. Definitive DEAD broadcasts bypass this gate. */
++export function leagueHitAlertGate(input: {
++  unresolvedSelections: string[];
++  pendingPregameChecks: string[];
++  liveStatWarnings: string[];
++}): { canSendHits: boolean; reason: string } {
++  if (input.unresolvedSelections.length || input.pendingPregameChecks.length) return {
++    canSendHits: false,
++    reason: "Hits paused: all 10 teams and their pregame selections, lineup locks, games, and lines must be verified."
++  };
++  return { canSendHits: true, reason: input.liveStatWarnings.length
++    ? "Selection checks passed. Some ESPN live stats are unavailable; only individually verified hits can notify."
++    : "Selection checks passed. Only individually verified hits can notify." };
++}
+--- a/components/ParlayLiveHitReport.tsx
++++ b/components/ParlayLiveHitReport.tsx
+@@ -27,34 +27,53 @@
+     <div className="snapshot-report-header">
+       <div>
+         <h3>League ticket · live notifications</h3>
+         <p className="parlay-muted">Monitors both website and verified off-app legs. Hits are broadcast to all subscribed phones; one verified loss sends the league-wide dead-ticket alert and ends further hits. Monitoring begins 8:15 AM Sunday Central. No official grading or payments are changed.</p>
+-        <p className="parlay-muted"><strong>League-wide push sending: {enabled ? "Enabled" : "OFF"}</strong>. Unverified off-app entries pause hit alerts.</p>
++        <p className="parlay-muted"><strong>League-wide push sending: {enabled ? "Enabled" : "OFF"}</strong>. All 10 teams, opponent starters, NFL games, and pregame lines must be verified before hit alerts can run. Missing live ESPN stats do not block other verified hits.</p>
+       </div>
+       <button type="button" className="button primary" disabled={busy} onClick={() => void preview()}>
+-        {busy ? "Checking live stats…" : "Preview live alerts (read-only)"}
++        {busy ? "Checking ticket…" : "Check ticket readiness (read-only)"}
+       </button>
+     </div>
+     {error ? <p className="notice error" role="alert">{error}</p> : null}
+     {report ? <>
+       {report.status === "no_window" || report.status === "empty" ? <p className="grading-preview-status-note" role="status">{report.note}</p> : <>
+       <div className="snapshot-summary">
+         <span><strong>{report.eligiblePicks}</strong> eligible picks</span>
++        <span><strong>{report.verifiedLegs}/{report.eligiblePicks}</strong> selections verified</span>
+         <span><strong>{report.currentlyHitting}</strong> currently hitting</span>
+         <span><strong>{report.registeredDevices}</strong> league devices</span>
+         <span><strong>{report.ticketStatus.replaceAll("_", " ")}</strong> ticket</span>
+-        <span><strong>{report.unresolved.length}</strong> unresolved</span>
++        <span><strong>{report.unresolved.length}</strong> needs attention</span>
++        <span><strong>{report.pendingChecks.length}</strong> pending checks</span>
+         <span><strong>0</strong> pushes sent by preview</span>
+       </div>
++      <div className={`parlay-live-readiness parlay-live-readiness--${report.readiness}`} role="status">
++        <strong>{!enabled ? "Push sending is OFF" : report.readiness === "ready" ?
++          "All selections verified — ready to monitor" : report.readiness === "pending" ?
++          "Verification in progress — not ready yet" : report.readiness === "attention" ?
++          "Action needed — hit notifications paused" : report.readiness === "dead" ?
++          "League ticket is dead — no more hit alerts" : "Readiness unavailable"}</strong>
++        <p>{report.readiness === "ready"
++          ? `All ${report.eligiblePicks} wager selections have verified lineup/eligibility evidence, pregame reference lines and NFL game matches. ${report.noBetCount} confirmed no-bet teams. This verifies monitoring prerequisites, not actual push delivery.`
++          : report.readiness === "pending"
++            ? "A scheduled starter lock or pregame snapshot has not yet been recorded. The page will not mark the ticket ready until these checks complete."
++            : report.readiness === "attention"
++              ? "One or more selections cannot be verified. Read the issues below before relying on league-wide hit alerts."
++              : report.readiness === "dead" ? "A definitive losing leg has closed league-wide hit alerts for this week." : "Check the details below."}</p>
++      </div>
+       <p className="parlay-muted">{report.note}</p>
+-      {report.unresolved.length ? <p className="notice error">Ticket needs verification: {report.unresolved.join("; ")}</p> : null}
++      {report.unresolved.length ? <p className="notice error">Selection issues: {report.unresolved.join("; ")}</p> : null}
++      {report.pendingChecks.length ? <p className="grading-preview-status-note">Pending pregame checks: {report.pendingChecks.join("; ")}</p> : null}
++      {report.liveStatWarnings.length ? <p className="grading-preview-status-note">ESPN live-stat availability (only the affected legs are held for review; other verified hits remain eligible): {report.liveStatWarnings.join("; ")}</p> : null}
+       {report.errors.length ? <p className="notice error">ESPN data issues: {report.errors.join("; ")}</p> : null}
+       {report.rows.length ? <div className="table-wrap"><table className="snapshot-table grading-preview-table grading-preview-table--live">
+-        <thead><tr><th>Team / Player</th><th>Sunday FanDuel line</th><th>ESPN stat</th><th>Live status</th><th>Explanation</th></tr></thead>
++        <thead><tr><th>Team / Player</th><th>Sunday FanDuel line</th><th>Pregame checks</th><th>ESPN stat</th><th>Live status</th><th>Explanation</th></tr></thead>
+         <tbody>{report.rows.map((row, index) => <tr key={`${row.team}-${index}`}>
+           <td><strong>{row.team}</strong><small>{row.player} · {row.source === "offapp" ? "Off-app" : "Website"}</small></td>
+           <td>{row.side.toUpperCase()} {row.line ?? ""}<small>{row.statId.replaceAll("_", " ")}</small></td>
+-          <td>{row.actualValue ?? "—"}<small>{row.gameFinal ? "Final" : "In-game / not yet final"}</small></td>
++          <td><span className={`grading-grade-pill ${row.readiness === "verified" ? "ready" : row.readiness === "pending" ? "settled" : "review"}`}>{row.readiness === "verified" ? "Verified" : row.readiness === "pending" ? "Pending" : "Attention"}</span><small>{row.readinessReason}</small></td>
++          <td>{row.actualValue ?? "—"}<small>{row.gameFinal ? "Final" : row.gameStarted ? "In-game / not final" : "Pre-game"}</small></td>
+           <td><span className={`grading-grade-pill ${row.status === "hit" ? "ready" : row.status === "review" || row.status === "miss" ? "review" : "settled"}`}>{row.status === "hit" ? "HITTING" : row.status === "miss" ? "MISSED" : row.status === "waiting" ? "Waiting" : "Review"}</span></td>
+           <td><small>{row.reason}</small></td>
+         </tr>)}</tbody>
+       </table></div> : null}
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -500,14 +500,21 @@
+ .grading-preview-table--grades th:nth-child(3) { width: 16%; }
+ .grading-preview-table--grades th:nth-child(4) { width: 11%; }
+ .grading-preview-table--grades th:nth-child(5) { width: 13%; }
+ .grading-preview-table--grades th:nth-child(6) { width: 27%; }
+-.grading-preview-table--live { min-width: 800px; }
+-.grading-preview-table--live th:nth-child(1) { width: 20%; }
+-.grading-preview-table--live th:nth-child(2) { width: 22%; }
+-.grading-preview-table--live th:nth-child(3) { width: 13%; }
+-.grading-preview-table--live th:nth-child(4) { width: 14%; }
+-.grading-preview-table--live th:nth-child(5) { width: 31%; }
++.grading-preview-table--live { min-width: 1120px; }
++.grading-preview-table--live th:nth-child(1) { width: 16%; }
++.grading-preview-table--live th:nth-child(2) { width: 17%; }
++.grading-preview-table--live th:nth-child(3) { width: 24%; }
++.grading-preview-table--live th:nth-child(4) { width: 10%; }
++.grading-preview-table--live th:nth-child(5) { width: 11%; }
++.grading-preview-table--live th:nth-child(6) { width: 22%; }
++.parlay-live-readiness { border: 1px solid var(--line); border-left-width: 3px; border-radius: 8px; padding: 11px 14px; margin: 12px 0; font-size: 13px; }
++.parlay-live-readiness strong { display: block; }
++.parlay-live-readiness p { margin: 5px 0 0; line-height: 1.5; font-size: 12px; color: var(--muted); }
++.parlay-live-readiness--ready { border-left-color: var(--success); }
++.parlay-live-readiness--pending { border-left-color: var(--warning); }
++.parlay-live-readiness--attention, .parlay-live-readiness--dead { border-left-color: var(--danger); }
+ .grading-preview-table th,
+ .grading-preview-table td {
+   padding: 13px 12px;
+   font-size: 12px;
+--- a/tests/parlay-live-hits.test.ts
++++ b/tests/parlay-live-hits.test.ts
+@@ -1,8 +1,8 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ import {
+-  chicagoLiveHitWindow, eligibleLiveHitPick, evaluateLiveHit, liveHitNotificationCopy,
++  chicagoLiveHitWindow, eligibleLiveHitPick, inspectWebsiteLiveReadiness, evaluateLiveHit, liveHitNotificationCopy,
+   type LiveHitPick
+ } from "../lib/parlay-live-hit-core";
+ import type { SnapshotRecord } from "../lib/parlay-snapshot-core";
+ import type { EspnNflSummary } from "../lib/parlay-grade-core";
+@@ -92,8 +92,67 @@
+   assert.equal(evaluateLiveHit(zero, tdYes, null).state, "review");
+   assert.equal(evaluateLiveHit(zero, { ...tdYes, side_id: "no" }, null).state, "review");
+ });
+ 
++test("missing in-game stats wait, rather than being mistaken for a loss or whole-ticket blocker", () => {
++  const absent: EspnNflSummary = {
++    header: { competitions: [{ status: { type: { completed: false } } }] },
++    boxscore: { players: [] }
++  };
++  assert.equal(evaluateLiveHit(absent, pick(), "5.5").state, "waiting");
++  assert.equal(evaluateLiveHit({ ...absent, header: { competitions: [{ status: { type: { completed: true } } }] } },
++    pick(), "5.5").state, "review");
++});
++
++test("Anytime TD explicitly waits for unreported or zero in-game touchdowns", () => {
++  const tdYes = pick({ stat_id: "touchdowns", side_id: "yes", line: null });
++  const inProgress: EspnNflSummary = { header: { competitions: [{ status: { type: { completed: false } } }] },
++    boxscore: { players: [] } };
++  const empty = evaluateLiveHit(inProgress, tdYes, null);
++  assert.equal(empty.state, "waiting");
++  assert.match(empty.reason, /waiting for a verified credited touchdown/i);
++  const zero = { ...inProgress, boxscore: { players: [{ statistics: [
++    { name: "rushing", labels: ["TD"], athletes: [{ athlete: { id: 123 }, stats: ["0"] }] },
++    { name: "receiving", labels: ["TD"], athletes: [{ athlete: { id: 123 }, stats: ["0"] }] }
++  ] }] } };
++  assert.equal(evaluateLiveHit(zero, tdYes, null).state, "waiting");
++  assert.equal(evaluateLiveHit({ ...zero, header: { competitions: [{ status: { type: { completed: true } } }] } },
++    tdYes, null).state, "review");
++  assert.equal(evaluateLiveHit(inProgress, { ...tdYes, side_id: "no" }, null).state, "waiting");
++});
++
++test("Anytime TD fires on first verified rushing OR receiving TD with the other category absent", () => {
++  const tdYes = pick({ stat_id: "touchdowns", side_id: "yes", line: null });
++  const summary = (name: string, id: number, value: string): EspnNflSummary => ({
++    header: { competitions: [{ status: { type: { completed: false } } }] },
++    boxscore: { players: [{ statistics: [
++      { name, labels: ["TD"], athletes: [{ athlete: { id }, stats: [value] }] }
++    ] }] }
++  });
++  assert.equal(evaluateLiveHit(summary("rushing", 123, "1"), tdYes, null).state, "hit");
++  assert.equal(evaluateLiveHit(summary("receiving", 123, "1"), tdYes, null).state, "hit");
++  assert.equal(evaluateLiveHit(summary("kickReturns", 123, "1"), tdYes, null).state, "hit");
++  assert.equal(evaluateLiveHit(summary("puntReturns", 123, "1"), tdYes, null).state, "hit");
++  assert.equal(evaluateLiveHit(summary("defensive", 123, "1"), tdYes, null).state, "hit");
++  assert.equal(evaluateLiveHit(summary("receiving", 999, "1"), tdYes, null).state, "waiting");
++  assert.equal(evaluateLiveHit(summary("passing", 123, "1"), tdYes, null).state, "waiting");
++});
++
++test("readiness distinguishes a pending Sunday lock from a real failed eligibility check", () => {
++  const locked = pick();
++  const primary = snapshot();
++  const during = "2026-11-15T17:58:00Z"; // 11:58 AM Central
++  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary], during).status, "pending");
++  assert.match(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary], during).reason,
++    /parlay-lock Cron/i);
++  assert.equal(inspectWebsiteLiveReadiness(locked, [primary], during).status, "verified");
++  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: false }, [primary], during).status, "attention");
++  assert.equal(inspectWebsiteLiveReadiness(locked, [], during).status, "pending");
++  assert.equal(inspectWebsiteLiveReadiness(locked, [], "2026-11-15T18:01:00Z").status, "attention");
++  assert.equal(inspectWebsiteLiveReadiness({ ...locked, eligibility_at_lock: null }, [primary],
++    "2026-11-15T18:01:00Z").status, "attention");
++});
++
+ test("push copy explicitly warns live stats are provisional", () => {
+   const live = liveHitNotificationCopy(pick(), "5.5", 6, false);
+   const finished = liveHitNotificationCopy(pick(), "5.5", 7, true);
+   assert.match(live.body, /not yet final/i);
+--- a/tests/parlay-league-ticket.test.ts
++++ b/tests/parlay-league-ticket.test.ts
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+-import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy } from "../lib/parlay-ticket-core";
++import { reconcileTicket, evaluateTicketLeg, hitBroadcastCopy, leagueHitAlertGate } from "../lib/parlay-ticket-core";
+ import { chooseGradingSnapshot, snapshotSlotForInstant, type SnapshotPick, type SnapshotRecord } from "../lib/parlay-snapshot-core";
+ import { chicagoLiveHitWindow } from "../lib/parlay-live-hit-core";
+ import { validateOffAppInput } from "../lib/parlay-offapp-validation";
+ import type { ParlaySubmission } from "../lib/parlay-types";
+@@ -98,4 +98,33 @@
+   const early=fs.readFileSync("supabase/parlay-early-snapshot-enable.sql","utf8");
+   assert.match(early,/ffball-parlay-snapshot-early/);
+   assert.doesNotMatch(early,/SELECT cron\.unschedule/);
+ });
++
++
++test("absent ESPN stats on one leg do not block an independently verified hit", () => {
++  const gate = leagueHitAlertGate({ unresolvedSelections: [], pendingPregameChecks: [],
++    liveStatWarnings: ["Bucky: not yet reported"] });
++  assert.equal(gate.canSendHits, true);
++  const summary = { header: { competitions: [{ status: { type: { completed: false } } }] },
++    boxscore: { players: [{ statistics: [{ name: "passing", labels: ["TD"],
++      athletes: [{ athlete: { id: 99 }, stats: ["2"] }] }] }] } };
++  const hit = evaluateTicketLeg(summary, { espnPlayerId: 99, statId: "passing_touchdowns", side: "over", line: "1.5" });
++  assert.equal(hit.state, "hit");
++  assert.equal(leagueHitAlertGate({ unresolvedSelections: ["Unreconciled Team 10"],
++    pendingPregameChecks: [], liveStatWarnings: [] }).canSendHits, false);
++  assert.equal(leagueHitAlertGate({ unresolvedSelections: [],
++    pendingPregameChecks: ["Awaiting recorded lock"], liveStatWarnings: [] }).canSendHits, false);
++});
++
++test("in-game touchdown bets wait without falsely declaring a MISS or DEAD", () => {
++  const unreported = { header: { competitions: [{ status: { type: { completed: false } } }] },
++    boxscore: { players: [] } };
++  const leg = { espnPlayerId: 99, statId: "touchdowns", side: "yes", line: null };
++  assert.equal(evaluateTicketLeg(unreported, leg).state, "waiting");
++  const reported = { ...unreported, boxscore: { players: [{ statistics: [
++    { name: "receiving", labels: ["TD"], athletes: [{ athlete: { id: 99 }, stats: ["1"] }] }
++  ] }] } };
++  assert.equal(evaluateTicketLeg(reported, leg).state, "hit");
++  const finalUnreported = { ...unreported, header: { competitions: [{ status: { type: { completed: true } } }] } };
++  assert.equal(evaluateTicketLeg(finalUnreported, leg).state, "review");
++});

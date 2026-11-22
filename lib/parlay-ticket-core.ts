@@ -95,7 +95,14 @@ export type TicketVerdict = {
 export function evaluateTicketLeg(summary: EspnNflSummary, leg: Pick<TicketLeg, "statId" | "side" | "line" | "espnPlayerId">): TicketVerdict {
   const final = isNflBoxscoreFinal(summary);
   const metric = extractEspnNflMetric(summary, leg.espnPlayerId, leg.statId);
-  if (metric.value === null) return { state: "review", final, actualValue: null, reason: metric.reason ?? "Statistic unavailable" };
+  if (metric.value === null) return {
+    state: final ? "review" : "waiting", final, actualValue: null,
+    reason: final
+      ? `${metric.reason ?? "Statistic unavailable"} Final settlement requires review.`
+      : leg.statId === "touchdowns"
+        ? "Anytime TD: waiting for a verified credited touchdown (rushing, receiving or documented return). No reported TD is not a loss."
+        : `Awaiting ESPN live statistic; not assumed zero. ${metric.reason ?? ""}`.trim()
+  };
   const compared = gradeStat({ statId: leg.statId, side: leg.side, line: leg.line,
     value: metric.value, possibleOtherTouchdowns: metric.possibleOtherTouchdowns });
   if (!compared.result) return { state: "review", final, actualValue: metric.value, reason: compared.reason };
@@ -115,4 +122,21 @@ export function hitBroadcastCopy(leg: TicketLeg, actual: number, final: boolean)
 }
 export function deadBroadcastCopy(teamName: string, player: string, description: string) {
   return { title: "League parlay is DEAD!", body: `${teamName}'s leg missed: ${player} — ${description}. No more hit alerts this week. Final settlement may require review.` };
+}
+
+/** Absent live box-score data must not suppress another *verified* hit.
+ * Missing/conflicting teams, unverified selections, kicks and snapshots still
+ * block positive broadcasts. Definitive DEAD broadcasts bypass this gate. */
+export function leagueHitAlertGate(input: {
+  unresolvedSelections: string[];
+  pendingPregameChecks: string[];
+  liveStatWarnings: string[];
+}): { canSendHits: boolean; reason: string } {
+  if (input.unresolvedSelections.length || input.pendingPregameChecks.length) return {
+    canSendHits: false,
+    reason: "Hits paused: all 10 teams and their pregame selections, lineup locks, games, and lines must be verified."
+  };
+  return { canSendHits: true, reason: input.liveStatWarnings.length
+    ? "Selection checks passed. Some ESPN live stats are unavailable; only individually verified hits can notify."
+    : "Selection checks passed. Only individually verified hits can notify." };
 }
