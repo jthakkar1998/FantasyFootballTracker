@@ -690,3 +690,128 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 }
 .commissioner-nav a[aria-current="page"] { color: #10140b; border-color: var(--accent); background: var(--accent); }
 .commissioner-preview-banner { width: min(1120px,calc(100% - 36px)); margin: 10px auto 0; padding: 12px 15px; border: 1px solid rgba(244,201,93,.4); border-radius: 11px; background: rgba(244,201,93,.07); color: #f4c95d; font-size: 12px; line-height: 1.5; }
+
+/* Commissioner V2 layout polish (scoped to its five pages).
+ * Keep the existing public site, parlay submission UI, and shared card styles unchanged. */
+.commissioner-v2-page {
+  min-width: 0;
+}
+.commissioner-v2-page > .page-title {
+  margin-bottom: 26px;
+}
+.commissioner-v2-page > .page-title p {
+  line-height: 1.6;
+}
+/* The original fold stripped the card border, but not its margins/padding.
+ * A generic .card does not have default inner padding, which made Tools content
+ * and subsections touch the container edge. */
+.commissioner-v2-page > .commissioner-fold {
+  margin: 18px 0;
+  border-color: var(--line);
+  background: linear-gradient(180deg, rgba(24,31,44,.96), rgba(18,23,34,.96));
+}
+.commissioner-v2-page > .commissioner-fold > summary {
+  display: flex;
+  align-items: center;
+  min-height: 54px;
+  padding: 16px 20px;
+  line-height: 1.45;
+}
+.commissioner-v2-page > .commissioner-fold[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.commissioner-v2-page > .commissioner-fold > .card {
+  margin: 0;
+  padding: 20px;
+  min-width: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.commissioner-v2-page > .commissioner-fold > .card > :first-child {
+  margin-top: 0;
+}
+.commissioner-v2-page > .commissioner-fold > .card > :last-child {
+  margin-bottom: 0;
+}
+.commissioner-v2-page > .commissioner-fold > .card > .parlay-muted {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+/* Tools' three distinct run histories need real interior spacing rather than
+ * headings sitting against the table or bleeding into a prior section. */
+.commissioner-v2-page > .commissioner-fold > .card > h3 {
+  margin: 26px 0 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -.02em;
+}
+.commissioner-v2-page > .commissioner-fold > .card > h3:first-of-type {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+}
+.commissioner-v2-page > .commissioner-fold > .card > .table-wrap {
+  width: 100%;
+  min-width: 0;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow-x: auto;
+}
+.commissioner-v2-page .commissioner-tools-table th,
+.commissioner-v2-page .commissioner-tools-table td {
+  padding: 13px 14px;
+  line-height: 1.5;
+  vertical-align: top;
+}
+.commissioner-v2-page .commissioner-tools-table td:last-child {
+  overflow-wrap: anywhere;
+}
+/* The prominent sections in all five views should use the same width rhythm. */
+.commissioner-v2-page .commissioner-summary-strip > span {
+  line-height: 1.5;
+}
+.commissioner-v2-page .commissioner-tool-section {
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+.commissioner-v2-page .commissioner-device-row {
+  min-width: 0;
+}
+.commissioner-v2-page .commissioner-test-tool {
+  margin: 0;
+  padding: 18px 20px;
+}
+.commissioner-v2-page .commissioner-test-grid label {
+  margin: 0;
+}
+.commissioner-v2-page .commissioner-filter-row label {
+  margin: 0;
+}
+.commissioner-v2-page .commissioner-obligation-group > summary {
+  line-height: 1.45;
+}
+@media (max-width: 720px) {
+  .commissioner-v2-page > .commissioner-fold > summary {
+    padding: 14px 15px;
+    min-height: 50px;
+  }
+  .commissioner-v2-page > .commissioner-fold > .card {
+    padding: 15px;
+  }
+  .commissioner-v2-page > .commissioner-fold > .card > h3 {
+    margin-top: 22px;
+    padding-top: 17px;
+  }
+  .commissioner-v2-page .commissioner-tools-table th,
+  .commissioner-v2-page .commissioner-tools-table td {
+    padding: 11px 12px;
+  }
+  .commissioner-v2-page .commissioner-test-tool {
+    padding: 15px;
+  }
+}
