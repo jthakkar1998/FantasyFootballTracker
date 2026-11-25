@@ -1,8 +1,11 @@
+import { commissionerWriteBlocked } from "@/lib/commissioner-write-guard";
 import { isAdmin } from "@/lib/auth";
 import { saveOffAppLeg, type OffAppInput } from "@/lib/parlay-offapp";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
+  const blocked = commissionerWriteBlocked();
+  if (blocked) return blocked;
   if (!(await isAdmin())) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   try {
     const body = await request.json() as Record<string, unknown>;

@@ -1,9 +1,12 @@
+import { commissionerWriteBlocked } from "@/lib/commissioner-write-guard";
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { leagueConfig } from "@/lib/config";
 import { updateParlayWeeklyTeamTracking } from "@/lib/parlay-tracking-db";
 
 export async function POST(request: Request) {
+  const blocked = commissionerWriteBlocked();
+  if (blocked) return blocked;
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
   try {
     const data = await request.formData();
@@ -21,7 +24,7 @@ export async function POST(request: Request) {
       action: action as "outside" | "payment" | "outside_result" | "outside_details",
       value
     });
-    return NextResponse.redirect(new URL(`/admin#parlay-row-${season}-${week}-${teamId}`, request.url), 303);
+    return NextResponse.redirect(new URL(`/admin/parlay#parlay-row-${season}-${week}-${teamId}`, request.url), 303);
   } catch (error) {
     return new Response(error instanceof Error ? error.message : "Could not update weekly tracking.", { status: 400 });
   }

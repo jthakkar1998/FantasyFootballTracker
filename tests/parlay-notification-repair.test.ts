@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
 const read = (relative: string) => readFileSync(path.join(root, relative), "utf8");
 
-test("scheduled reminder workflow uses real GitHub secrets expressions", () => {
-  const yaml = read(".github/workflows/parlay-reminders.yml");
-  assert.match(yaml, /REMINDER_URL:\s*\$\{\{\s*secrets\.PARLAY_REMINDER_URL\s*\}\}/);
-  assert.match(yaml, /CRON_TOKEN:\s*\$\{\{\s*secrets\.CRON_SECRET\s*\}\}/);
-  assert.doesNotMatch(yaml, /&#12[35];/);
-  assert.match(yaml, /--fail-with-body/);
+test("Supabase Cron owns reminders; do not revive the legacy GitHub Actions workflow", () => {
+  const sql = read("supabase/parlay-supabase-cron-enable.sql");
+  for (const job of ["ffball-parlay-thu-fri-sat-night", "ffball-parlay-sunday-morning", "ffball-parlay-sunday-urgent"])
+    assert.ok(sql.includes(job), `Missing Supabase Cron reminder job: ${job}`);
+  assert.equal(existsSync(path.join(root, ".github/workflows/parlay-reminders.yml")), false,
+    "Legacy reminder workflow must stay disabled to avoid duplicate sends.");
 });
 
 test("returning phone checks persisted Supabase team registration", () => {

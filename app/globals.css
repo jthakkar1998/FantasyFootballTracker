@@ -596,3 +596,97 @@ select:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(215,255
 .offapp-ticket-editor input, .offapp-ticket-editor select { min-width: 0; width: 100%; }
 .offapp-ticket-editor .offapp-wide { grid-column: 1 / -1; }
 @media(max-width:650px){.offapp-ticket-editor .offapp-fields{grid-template-columns:minmax(0,1fr)}}
+
+/* Commissioner V2: dedicated routes, balanced Home and mobile-first management. */
+.commissioner-header { width: min(1120px,calc(100% - 36px)); margin: 16px auto 8px; border: 1px solid var(--line); border-radius: 16px; background: rgba(20,27,38,.9); overflow: hidden; }
+.commissioner-header-top { padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.commissioner-header-top > div { display: grid; gap: 4px; }
+.commissioner-header-top strong { font-size: 18px; }
+.commissioner-nav { display: flex; gap: 3px; padding: 0 12px 12px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.commissioner-nav a { flex: 1 0 auto; min-width: 78px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; background: rgba(255,255,255,.025); }
+.commissioner-nav a:hover, .commissioner-nav a:focus-visible { color: var(--accent); border-color: rgba(215,255,63,.4); background: rgba(215,255,63,.07); }
+.commissioner-v2-page { padding-top: 24px; }
+.commissioner-v2-page .page-title { margin: 10px 0 24px; }
+.commissioner-v2-page .page-title h1 { font-size: clamp(36px,5vw,52px); }
+.commissioner-v2-page .page-title p { font-size: 14px; }
+.commissioner-v2-page .section-heading h2 { font-size: 24px; }
+.commissioner-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.commissioner-metric { padding: 19px; display: grid; gap: 9px; min-width: 0; transition: border-color .15s; }
+.commissioner-metric:hover { border-color: var(--accent); }
+.commissioner-metric > span { font-size: 12px; font-weight: 800; }
+.commissioner-metric > strong { font-size: 32px; letter-spacing: -.04em; }
+.commissioner-metric > small { min-height: 36px; line-height: 1.4; color: var(--muted); }
+.commissioner-metric > em { font-size: 11px; color: var(--accent); font-weight: 750; font-style: normal; }
+.commissioner-action-center { padding: 22px; margin: 24px 0; }
+.commissioner-action-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 13px 0; border-top: 1px solid var(--line); }
+.commissioner-action-row > div:first-child { display: grid; gap: 5px; min-width: 0; }
+.commissioner-action-row small { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.commissioner-action-row > a, .commissioner-action-row form { flex-shrink: 0; }
+.commissioner-quick-control { display: grid; gap: 4px; justify-items: end; }
+.commissioner-inline-error { color: var(--danger) !important; }
+.commissioner-summary-strip { display: flex; flex-wrap: wrap; gap: 9px; margin: 16px 0 20px; }
+.commissioner-summary-strip > span { border: 1px solid var(--line); background: var(--panel); border-radius: 11px; padding: 12px 15px; font-size: 12px; color: var(--muted); }
+.commissioner-summary-strip strong { color: var(--text); font-size: 18px; margin-right: 5px; }
+.commissioner-filter-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin: 22px 0 14px; }
+.commissioner-view-toggle { display: flex; gap: 4px; border: 1px solid var(--line); padding: 4px; border-radius: 12px; }
+.commissioner-view-toggle button { cursor: pointer; padding: 10px 13px; border: none; background: transparent; color: var(--muted); border-radius: 8px; font-weight: 750; }
+.commissioner-view-toggle button.active { background: var(--accent); color: #10140b; }
+.commissioner-filter-row label { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); }
+.commissioner-obligation-group { margin: 10px 0; padding: 0 18px; }
+.commissioner-obligation-group > summary { cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 17px 0; }
+.commissioner-obligation-group > summary span { font-size: 12px; color: var(--muted); }
+.commissioner-obligation { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 14px 0; border-top: 1px solid var(--line); scroll-margin-top: 120px; }
+.commissioner-obligation > div:first-child { display: grid; gap: 5px; min-width: 0; }
+.commissioner-obligation small { color: var(--muted); line-height: 1.5; }
+.commissioner-tool-section { padding: 20px; margin: 20px 0; }
+.commissioner-tool-section h2 { margin: 0 0 12px; }
+.commissioner-device-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 10px; }
+.commissioner-device-row { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; }
+.commissioner-device-row span { color: var(--muted); font-size: 12px; }
+.commissioner-tools-table { min-width: 790px; }
+.commissioner-tools-table th, .commissioner-tools-table td { font-size: 11px; }
+.commissioner-test-tool { margin: 10px 0; padding: 18px; }
+.commissioner-test-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 16px 0; }
+.commissioner-test-grid label { min-width: 0; display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.commissioner-test-confirm { display: flex; align-items: start; gap: 9px; margin: 14px 0; font-size: 12px; color: var(--text); }
+.commissioner-test-confirm input { width: auto; }
+.commissioner-mobile-cards { display: none; }
+.commissioner-csv-help > p { padding: 0 16px 14px; }
+.commissioner-v2-page a:not(.button):hover { color: var(--accent); }
+@media (max-width: 900px) {
+  .commissioner-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 750px) {
+  .commissioner-bulk-table-wrap { display: none; }
+  .commissioner-mobile-cards { display: grid; gap: 10px; }
+  .commissioner-mobile-team { overflow: hidden; }
+  .commissioner-mobile-team > summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; align-items: center; padding: 15px; }
+  .commissioner-mobile-team > summary > span:first-child { min-width: 0; display: grid; gap: 6px; }
+  .commissioner-mobile-team > summary small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .commissioner-mobile-status { flex-shrink: 0; font-size: 11px; color: var(--accent); }
+  .commissioner-mobile-fields { border-top: 1px solid var(--line); padding: 15px; display: grid; gap: 14px; }
+  .commissioner-mobile-fields > label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .commissioner-mobile-bet { margin: 0; line-height: 1.5; }
+  .commissioner-mobile-payment { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+  .commissioner-mobile-payment span:first-child { color: var(--muted); }
+  .commissioner-mobile-payment button { flex-shrink: 0; }
+  .commissioner-test-grid { grid-template-columns: 1fr; }
+  .commissioner-obligation { flex-wrap: wrap; align-items: flex-start; }
+  .commissioner-obligation .action-stack { width: 100%; flex-direction: row; }
+}
+@media (max-width: 520px) {
+  .commissioner-header { width: calc(100% - 24px); margin-top: 10px; }
+  .commissioner-header-top { padding: 12px; }
+  .commissioner-nav { padding: 0 9px 10px; }
+  .commissioner-nav a { min-width: 70px; padding: 10px 8px; }
+  .commissioner-v2-page .page-title h1 { font-size: 36px; }
+  .commissioner-metrics { gap: 9px; }
+  .commissioner-metric { padding: 13px; }
+  .commissioner-metric > strong { font-size: 27px; }
+  .commissioner-metric > small { font-size: 10px; }
+  .commissioner-action-center { padding: 14px; }
+  .commissioner-action-row { align-items: flex-start; flex-direction: column; }
+  .commissioner-action-row > a, .commissioner-action-row > form, .commissioner-action-row > .commissioner-quick-control { align-self: flex-end; }
+}
+.commissioner-nav a[aria-current="page"] { color: #10140b; border-color: var(--accent); background: var(--accent); }
+.commissioner-preview-banner { width: min(1120px,calc(100% - 36px)); margin: 10px auto 0; padding: 12px 15px; border: 1px solid rgba(244,201,93,.4); border-radius: 11px; background: rgba(244,201,93,.07); color: #f4c95d; font-size: 12px; line-height: 1.5; }

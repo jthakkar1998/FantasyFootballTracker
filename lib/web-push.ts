@@ -90,7 +90,7 @@ function vapidToken(endpoint: string): string {
   return `${input}.${signature}`;
 }
 
-export async function sendWebPush(subscription: BrowserPushSubscription, message: { title: string; body: string; url: string; urgent: boolean }): Promise<number> {
+export async function sendWebPush(subscription: BrowserPushSubscription, message: { title: string; body: string; url: string; urgent: boolean; tag?: string }): Promise<number> {
   if (!webPushConfigured()) throw new Error("VAPID keys have not been configured.");
   const validated = validatePushSubscription(subscription);
   const payload = encryptPushPayload(validated, JSON.stringify(message));
@@ -102,7 +102,8 @@ export async function sendWebPush(subscription: BrowserPushSubscription, message
       Authorization: `vapid t=${token}, k=${process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY}`,
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
-      TTL: message.urgent ? "60" : "7200",
+      // Important DEAD alerts should survive brief iOS offline/Focus intervals.
+      TTL: message.urgent ? "3600" : "7200",
       Urgency: message.urgent ? "high" : "normal"
     },
     body: new Uint8Array(payload),
