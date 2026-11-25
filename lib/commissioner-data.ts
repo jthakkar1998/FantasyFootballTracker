@@ -35,7 +35,7 @@ export async function loadCommissionerData(options: { eligiblePlayers?: boolean;
   if (!roster.length) roster = [...new Map(obligations.filter(item => item.season === leagueConfig.season)
     .map(item => [item.team_id, { teamId: item.team_id, teamName: item.team_name }] as const)).values()];
   const rows = makeParlayCommissionerRows({ season: leagueConfig.season, throughWeek: currentWeek,
-    teams: roster, submissions: history, tracking });
+    teams: roster, submissions: [...history], tracking: [...tracking] });
   let offapp: Awaited<ReturnType<typeof listOffAppLegs>> = [];
   let offappUnavailable = false;
   if (configured && options.offApp) {
