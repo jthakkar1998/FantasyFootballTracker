@@ -1,210 +1,82 @@
-import { leagueConfig } from "@/lib/config";
-import { listParlayHistory } from "@/lib/parlay-db";
-import { listOffAppLegs } from "@/lib/parlay-offapp";
-import type { ParlayTeamContext } from "@/lib/parlay-types";
-import { listParlayWeeklyTeamTracking } from "@/lib/parlay-tracking-db";
-import { makeParlayCommissionerRows } from "@/lib/parlay-admin";
-import { fetchLeagueSummary, teamDisplayName } from "@/lib/espn";
-import { notificationRegistrationCounts } from "@/lib/parlay-notifications";
-import { recentParlayReminderRuns, type ReminderRun } from "@/lib/parlay-reminder-diagnostics";
-import { getCurrentParlayContext } from "@/lib/parlay";
 import { redirect } from "next/navigation";
 import { isAdmin } from "@/lib/auth";
-import { databaseConfigured, listObligations } from "@/lib/supabase";
-import { obligationDueLabel } from "@/lib/format";
-import { StatusPill } from "@/components/StatusPill";
-import { CommissionerParlayManager } from "@/components/CommissionerParlayManager";
-import { ParlaySnapshotReport } from "@/components/ParlaySnapshotReport";
-import { ParlayGradingReport } from "@/components/ParlayGradingReport";
-import { ParlayLiveHitReport } from "@/components/ParlayLiveHitReport";
-import { listSnapshots, listSnapshotRuns, type SnapshotRun } from "@/lib/parlay-snapshot-db";
-import type { SnapshotRecord, SnapshotPick } from "@/lib/parlay-snapshot-core";
+import { leagueConfig } from "@/lib/config";
+import { loadCommissionerData } from "@/lib/commissioner-data";
+import { initialBet, needsPaymentFollowUp } from "@/lib/parlay-bulk";
+import { isOverdue } from "@/lib/format";
+import { verifiedNflSundayDate } from "@/lib/nfl-week-calendar";
+import { parlayDeadlineIso } from "@/lib/parlay-time";
+import { MetricCard } from "@/components/commissioner/MetricCard";
+import { HomePaymentQuickAction } from "@/components/commissioner/HomePaymentQuickAction";
+import type { ParlayCommissionerRow } from "@/lib/parlay-admin";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ synced?: string; error?: string; uploadLink?: string; testPush?: string }> }) {
+function reconciled(row: ParlayCommissionerRow, verifiedOffapp: Set<string>): boolean {
+  const entry = initialBet(row);
+  if (entry.result === "no_bet") return true;
+  if (row.hasWebsitePick) return true;
+  return entry.source === "outside" && verifiedOffapp.has(`${row.week}:${row.teamId}`);
+}
+
+export default async function CommissionerHome() {
   if (!(await isAdmin())) redirect("/admin/login");
-  const params = await searchParams;
-  const obligations = databaseConfigured() ? await listObligations() : [];
-  const parlayHistory = databaseConfigured() ? await listParlayHistory() : [];
-  const tracking = databaseConfigured() ? await listParlayWeeklyTeamTracking(leagueConfig.season) : [];
-  let offapp: Awaited<ReturnType<typeof listOffAppLegs>> = [];
-  let offappUnavailable = false;
-  if (databaseConfigured()) {
-    try { offapp = await listOffAppLegs(leagueConfig.season); }
-    catch { offappUnavailable = true; }
-  }
-  let snapshots: SnapshotRecord[] = [];
-  let snapshotRuns: SnapshotRun[] = [];
-  let snapshotsUnavailable = false;
-  if (databaseConfigured()) {
-    try {
-      [snapshots, snapshotRuns] = await Promise.all([
-        listSnapshots(leagueConfig.season), listSnapshotRuns(leagueConfig.season)
-      ]);
-    } catch { snapshotsUnavailable = true; }
-  }
-  // Device totals only; subscription endpoint URLs and keys never appear in the HTML.
-  const deviceCounts = databaseConfigured() ? await notificationRegistrationCounts() : new Map<number, number>();
-  let reminderRuns: ReminderRun[] = [];
-  let diagnosticsUnavailable = false;
-  if (databaseConfigured()) {
-    try { reminderRuns = await recentParlayReminderRuns(); }
-    catch { diagnosticsUnavailable = true; }
-  }
-  const activePicks = parlayHistory.filter(pick => !pick.withdrawn_at);
-  let thisWeek: { week: number; teams: ParlayTeamContext[] } | null = null;
-  let roster: { teamId: number; teamName: string }[] = [];
-  let currentWeek = 1;
-  let rosterUnavailable = false;
-  if (databaseConfigured()) {
-    try {
-      // Read the full ESPN league roster rather than only teams with a submission.
-      // This also avoids requiring the NFL odds/deadline API to build history.
-      const summary = await fetchLeagueSummary();
-      roster = (summary.teams ?? []).map(team => ({ teamId: team.id, teamName: teamDisplayName(team, team.id) }));
-      if (roster.length === 0) rosterUnavailable = true;
-      const reportedWeek = Number(summary.status?.currentMatchupPeriod ?? summary.scoringPeriodId ?? summary.status?.latestScoringPeriod ?? 1);
-      currentWeek = Number.isFinite(reportedWeek) ? Math.max(1, Math.floor(reportedWeek)) : 1;
-    } catch {
-      rosterUnavailable = true;
-      // Still display all recorded rows even if ESPN is temporarily unreachable.
-    }
-    try {
-      const context = await getCurrentParlayContext();
-      thisWeek = { week: context.week, teams: context.teams };
-      currentWeek = Math.max(currentWeek, context.week);
-      if (!roster.length) roster = context.teams.map(team => ({ teamId: team.teamId, teamName: team.teamName }));
-    } catch { /* Keep commissioner payment/history available when ESPN or NFL is unavailable. */ }
-  }
-  if (!roster.length) {
-    // Last-resort fallback: completed punishment syncs may provide additional
-    // team identities even when ESPN is temporarily unreachable.
-    roster = [...new Map(obligations.filter(item => item.season === leagueConfig.season)
-      .map(item => [item.team_id, { teamId: item.team_id, teamName: item.team_name }] as const)).values()];
-  }
-  const currentPicks = thisWeek ? activePicks.filter(pick => pick.season === leagueConfig.season && pick.week === thisWeek.week) : [];
-  const commissionerRows = makeParlayCommissionerRows({
-    season: leagueConfig.season, throughWeek: currentWeek,
-    teams: roster, submissions: parlayHistory, tracking
-  });
-
-  return (
-    <section className="page-section">
-      <div className="admin-title-row">
-        <div className="page-title"><span className="eyebrow">COMMISSIONER</span><h1>Control room</h1><p>Refresh ESPN, manage completion, and create private recap-upload links here.</p></div>
-        <form action="/api/admin/logout" method="post"><button className="button ghost">Log out</button></form>
-      </div>
-
-      {params.synced ? <div className="notice success">ESPN sync completed.</div> : null}
-      {params.testPush ? <div className="notice success">Test push accepted by {params.testPush.replace("-", "/")} registered push services. Check your phones.</div> : null}
-      {params.error ? <div className="notice error">Action failed: {params.error}</div> : null}
-      {params.uploadLink ? (
-        <div className="notice success upload-link-notice">
-          <strong>Private recap link created.</strong>
-          <p>Copy this link and send it only to that week&apos;s recap loser. Generating another link replaces this one.</p>
-          <input readOnly value={params.uploadLink} aria-label="Recap upload link" />
-        </div>
-      ) : null}
-
-      <div className="admin-actions card">
-        <div><h2>ESPN synchronization</h2><p>The daily job runs automatically. Use this after deployment or whenever you want to refresh immediately.</p></div>
-        <form action="/api/admin/sync" method="post"><button className="button primary" disabled={!databaseConfigured()}>Sync ESPN now</button></form>
-      </div>
-
-      <section id="parlay-management" className="section-block">
-        <div className="section-heading"><div><span className="eyebrow">PARLAY COMMISSIONER</span><h2>Weekly bets & $1 payments</h2></div></div>
-        <p className="parlay-muted">Website and confirmed off-app picks count toward the shared league ticket. Use <strong>Ticket details</strong> on an off-app row to verify its player and actual placed line. Reconcile every team, including No Bet Placed.</p>
-        {offappUnavailable ? <div className="notice error">Structured off-app ticket data unavailable. Run the league-ticket upgrade SQL before using this feature.</div> : null}
-        {rosterUnavailable ? <div className="notice error">ESPN team list is temporarily unavailable. Showing known teams from saved records only; refresh when ESPN is available to see the full league.</div> : null}
-        {thisWeek ? (
-          <div className="card parlay-admin-status"><strong>Week {thisWeek.week} submission & notification status</strong><div className="parlay-admin-team-grid">
-            {thisWeek.teams.map(team => {
-              const submitted = currentPicks.some(p => p.team_id === team.teamId);
-              const outside = tracking.some(t => t.week === thisWeek?.week && t.team_id === team.teamId && t.submitted_outside_app);
-              const verifiedOutside = offapp.some(l => l.week === thisWeek?.week && l.team_id === team.teamId && l.confirmed);
-              return <div key={team.teamId}><span>{team.teamName}</span><b>{submitted ? "✓ Website pick" : outside ? verifiedOutside ? "✓ Off-app verified" : "⚠ Off-app details needed" : "○ No pick"}</b><small>{deviceCounts.get(team.teamId) ?? 0} phone(s) subscribed</small>
-                {(deviceCounts.get(team.teamId) ?? 0) > 0 ? <form action="/api/admin/parlay/test-push" method="post"><input type="hidden" name="teamId" value={team.teamId}/><button type="submit" className="button ghost">Send test push</button></form> : null}
-              </div>;
-            })}
-          </div></div>
-        ) : null}
-        <details className="commissioner-fold"><summary>Reminder delivery diagnostics</summary><div className="card reminder-diagnostics">
-          <h3>Automated reminder diagnostics</h3>
-          <p className="parlay-muted">Supabase Cron checks during Thursday–Saturday 8 PM, Sunday 9 AM, and Sunday 11:30 AM Central windows. Each slot is delivered once per eligible device, with up to three attempts for failures.</p>
-          {diagnosticsUnavailable ? <p className="notice error">Reminder diagnostics aren't available yet. Check that the Supabase Cron migration was applied.</p> : reminderRuns.length === 0 ? <p className="parlay-muted">No reminder API runs recorded yet. After enabling Supabase Cron, scheduled runs will appear here.</p> : (
-            <div className="table-wrap">
-              <table className="reminder-history-table">
-                <thead><tr><th>Run (Central)</th><th>Slot</th><th>Status</th><th>Missing</th><th>Devices eligible</th><th>Sent</th><th>Retried</th><th>Failed</th></tr></thead>
-                <tbody>{reminderRuns.map(run => (
-                  <tr key={run.id}>
-                    <td>{new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(run.started_at))}</td>
-                    <td>{run.slot ?? "—"}</td>
-                    <td title={run.error_message ?? undefined} className={run.status === "success" ? "reminder-success" : run.status === "partial" || run.status === "error" ? "reminder-error" : ""}>{run.status.replaceAll("_", " ")}{run.error_message ? `: ${run.error_message}` : ""}</td>
-                    <td>{run.missing_teams}</td><td>{run.eligible_devices}</td><td>{run.sent}</td><td>{run.retried}</td><td>{run.failed}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          )}
-          <small className="parlay-muted">A successful cron request is not proof of phone delivery; “Sent” means the push provider accepted it. Check Supabase Integrations → Cron → History if no API runs appear.</small>
-        </div>
-        </details>
-        <details className="commissioner-fold"><summary>Sunday line snapshots and history</summary>
-        {snapshotsUnavailable ? <div className="notice error">FanDuel snapshots are unavailable. The Phase 1 database migration may not be installed yet.</div> :
-          <ParlaySnapshotReport season={leagueConfig.season} currentWeek={currentWeek}
-            picks={activePicks.filter(pick => pick.season === leagueConfig.season) as SnapshotPick[]}
-            snapshots={snapshots} runs={snapshotRuns} />}
-        </details>
-        <details className="commissioner-fold" open><summary>League-wide live alerts & ticket status</summary>
-        {!snapshotsUnavailable ? <ParlayLiveHitReport enabled={process.env.PARLAY_LIVE_HITS_ENABLED === "true" && process.env.PARLAY_LEAGUE_TICKET_NOTIFICATIONS_ENABLED === "true"} /> : null}
-        </details>
-        <details className="commissioner-fold"><summary>Automatic grading diagnostics</summary>
-        {!snapshotsUnavailable ? <ParlayGradingReport currentWeek={currentWeek} snapshotWeeks={[...new Set(snapshots.map(record => record.week))]} writesEnabled={process.env.PARLAY_AUTO_GRADING_ENABLED === "true"} /> : null}
-        </details>
-        {thisWeek ? <div className="card parlay-admin-status">
-          <strong>Week {thisWeek.week} · Ticket reconciliation</strong>
-          <p className="parlay-muted">{currentPicks.length} website picks · {offapp.filter(l => l.week === thisWeek?.week && l.confirmed).length} verified off-app legs · {tracking.filter(t => t.week === thisWeek?.week && t.outside_result_status === "no_bet").length} No Bet Placed.
-            Unverified off-app bets or missing team decisions pause league-wide hit alerts.</p>
-        </div> : null}
-        <CommissionerParlayManager rows={commissionerRows} season={leagueConfig.season}
-          currentWeek={thisWeek?.week ?? null} eligibleByTeam={Object.fromEntries((thisWeek?.teams ?? []).map(t => [t.teamId, t.eligiblePlayers]))}
-          offappLegs={offapp} />
-      </section>
-
-      <div className="table-wrap card admin-table">
-        <table>
-          <thead><tr><th>Week</th><th>Team</th><th>Obligation</th><th>Due</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {obligations.length ? obligations.map((item) => (
-              <tr key={item.id}>
-                <td>W{item.week}</td>
-                <td>{item.team_name}</td>
-                <td>{item.type === "WEEKLY_RECAP" ? (item.video_path ? "Video recap · uploaded" : "Video recap") : item.description}</td>
-                <td>{obligationDueLabel(item)}</td>
-                <td><StatusPill item={item} /></td>
-                <td>
-                  <div className="action-stack">
-                    {item.type === "WEEKLY_RECAP" && !item.video_path ? (
-                      <form action="/api/admin/recap-link" method="post">
-                        <input type="hidden" name="id" value={item.id} />
-                        <button className="button primary" type="submit">Create upload link</button>
-                      </form>
-                    ) : null}
-                    <form action="/api/admin/toggle" method="post">
-                      <input type="hidden" name="id" value={item.id} />
-                      <input type="hidden" name="completed" value={item.completed ? "false" : "true"} />
-                      <button className={`button ${item.completed ? "ghost" : "small"}`} type="submit">
-                        {item.completed ? "Reopen" : "Mark complete"}
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            )) : <tr><td colSpan={6}>No obligations yet. Run Sync ESPN now.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+  const data = await loadCommissionerData({ offApp: true });
+  const week = data.currentWeek;
+  const currentRows = data.rows.filter(row => row.week === week);
+  const offappVerified = new Set(data.offapp.filter(leg => leg.confirmed).map(leg => `${leg.week}:${leg.team_id}`));
+  const settledCount = currentRows.filter(row => reconciled(row, offappVerified)).length;
+  const due = currentRows.filter(row => needsPaymentFollowUp(row, initialBet(row)));
+  const paidCount = currentRows.filter(row => {
+    const entry = initialBet(row);
+    return entry.result !== "no_bet" && (row.hasWebsitePick || entry.source === "outside") && entry.paid;
+  }).length;
+  const obligations = data.obligations.filter(item => !item.completed);
+  const iceObligations = obligations.filter(item => item.type !== "WEEKLY_RECAP");
+  const outstandingIces = iceObligations.reduce((sum, item) => sum + item.penalty_units, 0);
+  const outstandingRecaps = obligations.filter(item => item.type === "WEEKLY_RECAP").length;
+  const overdue = obligations.filter(item => isOverdue(item));
+  const unresolved = data.roster.length === 10 ? currentRows.filter(row => !reconciled(row, offappVerified)) : [];
+  const warnings = Number(data.offappUnavailable) + Number(data.rosterUnavailable || data.roster.length !== 10);
+  const issueCount = unresolved.length + overdue.length + due.length + warnings;
+  const sunday = verifiedNflSundayDate(leagueConfig.season, week);
+  const pastDeadline = sunday ? Date.now() >= Date.parse(parlayDeadlineIso(sunday)) : false;
+  const paymentDenominator = paidCount + due.length;
+  return <section className="page-section commissioner-v2-page">
+    <div className="page-title"><span className="eyebrow">COMMISSIONER / HOME</span><h1>League overview</h1>
+      <p>Current Week {week} · {leagueConfig.season} season. Quick actions save through existing commissioner controls.</p></div>
+    {!data.configured ? <p className="notice error">Supabase is not configured. Live commissioner records are unavailable.</p> : null}
+    {data.rosterUnavailable || data.roster.length !== 10 ? <p className="notice error">League roster could not be fully verified. Summaries may be incomplete until ESPN is available.</p> : null}
+    {data.offappUnavailable ? <p className="notice error">Verified off-app ticket details could not be loaded. Ticket readiness may be understated.</p> : null}
+    <div className="commissioner-metrics">
+      <MetricCard label="Sunday parlay" value={`${settledCount}/${currentRows.length || 10}`} hint="Teams reconciled, including No Bet Placed" href="/admin/parlay" />
+      <MetricCard label="$1 payments" value={`${paidCount}/${paymentDenominator}`} hint="Commissioner verified / actually due" href="/admin/parlay#weekly-bets" />
+      <MetricCard label="Penalties & recaps" value={`${outstandingIces} + ${outstandingRecaps}`} hint="Ices owed + recap obligations" href="/admin/penalties" />
+      <MetricCard label="Needs attention" value={issueCount} hint="Unresolved teams, overdue obligations, warnings" href="#action-center" />
+    </div>
+    <section className="card commissioner-action-center" id="action-center">
+      <div className="section-heading"><div><span className="eyebrow">NEXT STEPS</span><h2>Action center</h2></div></div>
+      {!issueCount && !due.length ? <p className="parlay-muted">No unresolved issues or payments requiring follow-up right now. Review Live to confirm pregame verification separately.</p> : null}
+      {unresolved.slice(0, 5).map(row => <div key={`unresolved-${row.teamId}`} className="commissioner-action-row">
+        <div><strong>{row.teamName}: {pastDeadline ? "unreconciled ticket" : "selection still pending"}</strong><small>Week {week} · {pastDeadline ? "Deadline passed. " : "Before the Sunday cutoff. "}Check website submission, structured off-app details, or No Bet Placed.</small></div>
+        <a className="button ghost" href={`/admin/parlay?team=${encodeURIComponent(row.teamName)}#weekly-bets`}>Review</a>
+      </div>)}
+      {due.slice(0, 5).map(row => <div key={`paid-${row.teamId}`} className="commissioner-action-row">
+        <div><strong>{row.teamName}: $1 payment pending</strong><small>Week {week} · Commissioner verification only.</small></div>
+        <HomePaymentQuickAction season={row.season} week={row.week} teamId={row.teamId} enabled={process.env.VERCEL_ENV === "production"}/>
+      </div>)}
+      {overdue.slice(0, 5).map(item => <div key={item.id} className="commissioner-action-row">
+        <div><strong>{item.team_name}: overdue {item.type === "WEEKLY_RECAP" ? "recap" : "ice penalty"}</strong>
+          <small>Week {item.week} · {item.description}</small></div>
+        {item.type === "WEEKLY_RECAP" ? <a className="button ghost" href={`/admin/penalties#obligation-${item.id}`}>Manage recap</a> :
+        <form action="/api/admin/toggle" method="post"><input type="hidden" name="id" value={item.id}/>
+          <input type="hidden" name="completed" value="true"/><input type="hidden" name="returnTo" value="/admin"/>
+          <button type="submit" className="button small" disabled={process.env.VERCEL_ENV !== "production"}>Mark complete</button></form>}
+      </div>)}
+      {due.length > 5 || unresolved.length > 5 || overdue.length > 5 ? <p className="parlay-muted">Additional items are available in Parlay and Penalties.</p> : null}
+      <div className="commissioner-action-row"><div><strong>Pregame monitoring readiness</strong>
+        <small>Verified snapshots, lineup lock and ESPN live stats are checked separately.</small></div>
+        <a className="button ghost" href="/admin/live">Open Live</a></div>
     </section>
-  );
+  </section>;
 }

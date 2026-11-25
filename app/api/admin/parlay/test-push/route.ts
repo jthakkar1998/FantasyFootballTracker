@@ -1,3 +1,4 @@
+import { commissionerWriteBlocked } from "@/lib/commissioner-write-guard";
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/supabase";
@@ -6,6 +7,8 @@ import { sendWebPush, webPushConfigured, type BrowserPushSubscription } from "@/
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const blocked = commissionerWriteBlocked();
+  if (blocked) return blocked;
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
   const form = await request.formData();
   const teamId = Number(form.get("teamId"));
@@ -24,6 +27,6 @@ export async function POST(request: Request) {
     } catch { return 0; }
   }));
   const successes = statuses.filter(code => code >= 200 && code < 300).length;
-  const destination = new URL(`/admin?testPush=${successes}-${statuses.length}#parlay-management`, request.url);
+  const destination = new URL(`/admin/tools?testPush=${successes}-${statuses.length}`, request.url);
   return NextResponse.redirect(destination, 303);
 }

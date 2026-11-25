@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LiveHitRunResult } from "@/lib/parlay-live-hits";
 
 export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
   const [report, setReport] = useState<LiveHitRunResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
 
   async function preview() {
     if (busy) return;
@@ -18,10 +19,15 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
       setReport(data as LiveHitRunResult);
+      setCheckedAt(new Date().toISOString());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not check live NFL statistics.");
     } finally { setBusy(false); }
   }
+
+  // An automatic READ-ONLY readiness check makes the page informative before kickoff,
+  // while manual refresh remains available. The server short-circuits outside Sunday.
+  useEffect(() => { void preview(); /* Run once on page mount. */ }, []);
 
   return <div className="card grading-preview-card">
     <div className="snapshot-report-header">
@@ -35,6 +41,9 @@ export function ParlayLiveHitReport({ enabled }: { enabled: boolean }) {
       </button>
     </div>
     {error ? <p className="notice error" role="alert">{error}</p> : null}
+    {checkedAt ? <p className="parlay-muted">Last readiness/stat preview: {new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"
+    }).format(new Date(checkedAt))}. Select Check ticket readiness to refresh.</p> : null}
     {report ? <>
       {report.status === "no_window" || report.status === "empty" ? <p className="grading-preview-status-note" role="status">{report.note}</p> : <>
       <div className="snapshot-summary">

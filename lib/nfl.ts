@@ -32,7 +32,7 @@ export async function parlaySundayForWeek(week: number): Promise<string> {
 /** Cached across ALL Vercel instances in the existing parlay_odds_cache table.
  * A blocked upstream endpoint can reuse recent, previously validated event IDs.
  * A cold-cache failure still fails closed: never infer an event ID for grading. */
-export async function fetchNflWeekEvents(week: number): Promise<NflEvent[]> {
+export async function fetchNflWeekEvents(week: number, options: { readOnly?: boolean } = {}): Promise<NflEvent[]> {
   if (!Number.isInteger(week) || week < 1 || week > 22) throw new Error("Invalid NFL week");
   const cacheKey = `espn:nfl:schedule:v2:${leagueConfig.season}:w${week}`;
   let cached: { payload: NflEvent[]; fetchedAt: string } | null = null;
@@ -59,7 +59,8 @@ export async function fetchNflWeekEvents(week: number): Promise<NflEvent[]> {
         .filter(event => Boolean(event.date) && (event.competitions?.[0]?.competitors ?? []).length === 2)
         .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
     },
-    saveFresh: (events, fetchedAt) => setCachedOdds(cacheKey, events, fetchedAt)
+    // Commissioner preview may share Production Supabase: never update the shared cache in dry runs.
+    saveFresh: options.readOnly ? async () => {} : (events, fetchedAt) => setCachedOdds(cacheKey, events, fetchedAt)
   });
 }
 

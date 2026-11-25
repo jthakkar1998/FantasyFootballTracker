@@ -50,7 +50,7 @@ async function nflSummary(eventId: string): Promise<EspnNflSummary> {
   if (!response.ok) throw new Error(`ESPN summary HTTP ${response.status}`);
   return await response.json() as EspnNflSummary;
 }
-async function teamIdsForLeague(): Promise<number[]> {
+async function teamIdsForLeague(allowCacheWrite = true): Promise<number[]> {
   const key = `ticket:verified-roster:${leagueConfig.season}`;
   const cached = await getCachedOdds<number[]>(key);
   if (cached && cached.payload.length === 10 && Date.now() - Date.parse(cached.fetchedAt) < 7 * 86_400_000) return cached.payload;
@@ -58,7 +58,7 @@ async function teamIdsForLeague(): Promise<number[]> {
     const summary = await fetchLeagueSummary();
     const ids = (summary.teams ?? []).map(t => t.id);
     if (ids.length !== 10 || new Set(ids).size !== 10) throw new Error("League roster not uniquely verified as 10 teams.");
-    await setCachedOdds(key, ids, new Date().toISOString());
+    if (allowCacheWrite) await setCachedOdds(key, ids, new Date().toISOString());
     return ids;
   } catch (error) {
     if (cached && cached.payload.length === 10 && Date.now() - Date.parse(cached.fetchedAt) < 30 * 86_400_000) return cached.payload;
@@ -106,7 +106,7 @@ export async function runLiveHitNotifications(args: { dryRun: boolean; nowIso?: 
     listParlayWeeklyTeamTracking(leagueConfig.season),
     listOffAppLegs(leagueConfig.season, week),
     listSnapshots(leagueConfig.season, week),
-    teamIdsForLeague(),
+    teamIdsForLeague(!args.dryRun),
     getDb().from("parlay_push_subscriptions").select("id,team_id,endpoint,subscription"),
     getDb().from("parlay_ticket_state").select("status,dead_alert_key,dead_reason").eq("season",leagueConfig.season).eq("week",week).maybeSingle(),
     getDb().from("parlay_ticket_alert_deliveries").select("alert_key,subscription_id,status,attempt_count").eq("season",leagueConfig.season).eq("week",week)
@@ -141,7 +141,7 @@ export async function runLiveHitNotifications(args: { dryRun: boolean; nowIso?: 
 
   const hits: Array<{ leg: TicketLeg; key: string; actual: number; final: boolean }> = [];
   if (!dead) {
-    const events = await fetchNflWeekEvents(week);
+    const events = await fetchNflWeekEvents(week, { readOnly: args.dryRun });
     const eventByLeg = new Map<string,NflEvent>();
     const checkByLeg = new Map<string,string>();
     for (const leg of ticket.legs) {
@@ -277,7 +277,8 @@ export async function runLiveHitNotifications(args: { dryRun: boolean; nowIso?: 
       let message: string | null = null;
       try {
         code = await sendWebPush(phone.subscription, { title: alert.title, body: alert.body,
-          url: "/parlay", urgent: isDead });
+          url: "/parlay", urgent: isDead,
+          tag: `ffball-${leagueConfig.season}-${week}-${alert.key}` });
         if (code >= 200 && code < 300) status = "sent";
         else if (code === 404 || code === 410) status = "expired";
         else message = `Web Push provider HTTP ${code}`;

@@ -1,3 +1,4 @@
+import { commissionerWriteBlocked } from "@/lib/commissioner-write-guard";
 import { isAdmin } from "@/lib/auth";
 import { runAutoGrading } from "@/lib/parlay-auto-grade";
 
@@ -8,6 +9,8 @@ export const maxDuration = 60;
 // approve a historical week AFTER checking the read-only grading preview.
 // The enable flag and all per-pick DB safety checks still apply.
 export async function POST(request: Request) {
+  const blocked = commissionerWriteBlocked();
+  if (blocked) return blocked;
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
   const origin = request.headers.get("origin");
   if (!origin || origin !== new URL(request.url).origin) {

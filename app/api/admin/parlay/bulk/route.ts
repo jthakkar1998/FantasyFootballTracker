@@ -1,3 +1,4 @@
+import { commissionerWriteBlocked } from "@/lib/commissioner-write-guard";
 import { isAdmin } from "@/lib/auth";
 import { leagueConfig } from "@/lib/config";
 import { getDb } from "@/lib/supabase";
@@ -59,6 +60,8 @@ async function saveOne(row: BetUpdate): Promise<void> {
 }
 
 export async function POST(request: Request) {
+  const blocked = commissionerWriteBlocked();
+  if (blocked) return blocked;
   if (!(await isAdmin())) return Response.json({ error: "Unauthorized" }, { status: 401 });
   let updates: BetUpdate[];
   try {
